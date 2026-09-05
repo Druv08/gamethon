@@ -10,6 +10,7 @@
 
 class UCameraComponent;
 class UInputAction;
+class UPTKHealthComponent;
 class UInputMappingContext;
 class UPaperFlipbook;
 class UPaperFlipbookComponent;
@@ -115,6 +116,39 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PTK|Combat")
 	bool StartAttack();
 
+	UFUNCTION(BlueprintPure, Category = "PTK|Health")
+	UPTKHealthComponent* GetHealthComponent() const { return HealthComponent; }
+
+	/** True once health has hit zero and HandleDeath has run. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Health")
+	bool IsDead() const { return MovementState == EPTKMovementState::Dead; }
+
+	/** Which side this character fights for. Melee only hits the other one. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	EPTKTeam GetTeam() const { return Team; }
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	bool IsHostileTo(const APTKTopDownCharacter* Other) const;
+
+	/** Centre of the melee test for the current facing, in world space. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	FVector GetAttackHitCentre() const;
+
+	/** How far this character's attack reaches, in world units. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	float GetAttackReach() const { return AttackRangeTiles * TileSize; }
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	float GetAttackHitRadius() const { return GetAttackReach() * AttackHitWidthFactor; }
+
+	/**
+	 * Distance from the character to the centre of the melee sphere, chosen so
+	 * the sphere's FAR edge lands exactly on GetAttackReach(). That keeps the
+	 * sphere in front of the character instead of straddling it.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	float GetAttackHitDistance() const { return GetAttackReach() - GetAttackHitRadius(); }
+
 	/** Latest movement input, already clamped so its magnitude never exceeds 1. */
 	UFUNCTION(BlueprintPure, Category = "PTK|State")
 	FVector2D GetMoveInput() const { return MoveInput; }
@@ -151,6 +185,30 @@ protected:
 	 * Returns true while the attack still owns the character.
 	 */
 	bool TickAttack(float DeltaSeconds);
+
+	/**
+	 * Runs the melee overlap and damages every hostile inside it.
+	 *
+	 * Called once per swing, at the impact frame - never per tick, and never on
+	 * the key press. Overridden behaviour belongs in Blueprint via OnAttackHit.
+	 */
+	void PerformAttackHit();
+
+	/** Stops the character, disables collision and enters the Dead state. */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Health")
+	virtual void HandleDeath(AActor* Killer);
+
+	/** Bound to the health component in BeginPlay. */
+	UFUNCTION()
+	void HandleHealthChanged(UPTKHealthComponent* Component, float NewHealth,
+		float Delta, AActor* DamageInstigator);
+
+	UFUNCTION()
+	void HandleDeathEvent(UPTKHealthComponent* Component, AActor* Killer);
+
+	/** Fired after a swing connects, once per victim. Prototype hook for VFX. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "PTK|Combat")
+	void OnAttackHit(APTKTopDownCharacter* Victim, float DamageDealt);
 
 	/** Pushes IdleFlipbooks / WalkFlipbooks onto the sprite component. */
 	void UpdateAnimation();
@@ -191,6 +249,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PTK|Components")
 	TObjectPtr<UCameraComponent> TopDownCamera;
+
+	/** The one health implementation, shared with every other character. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PTK|Components")
+	TObjectPtr<UPTKHealthComponent> HealthComponent;
 
 	// ------------------------------------------------------------------
 	// Input
@@ -281,6 +343,19 @@ protected:
 	FPTKDirectionalFlipbooks AttackFlipbooks;
 
 	/**
+	 * Death collapse - a single non-directional flipbook.
+	 *
+	 * Death is not directional: a character falls the same way whichever way it
+	 * was facing, and the delivered art is one 8-frame sequence rather than
+	 * four. Left empty, the character simply freezes on its last living frame.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Animation")
+	TObjectPtr<UPaperFlipbook> DeathFlipbook;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Animation", meta = (ClampMin = "0.01"))
+	float DeathPlayRate = 1.0f;
+
+	/**
 	 * Sprite position relative to the capsule centre.
 	 * The default of zero is correct when the sprite pivot is the feet
 	 * anchor and the capsule is the feet blob - actor origin, capsule centre
@@ -351,6 +426,63 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat", meta = (ClampMin = "0.01"))
 	float AttackFallbackDuration = 0.667f;
+
+	/** Side this character fights for. Guards and enemies override in their tier. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PTK|Combat")
+	EPTKTeam Team = EPTKTeam::Guards;
+
+	/** Damage one connecting swing deals. Prototype: Ravager 25, Swarm Node 15. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat", meta = (ClampMin = "0.0"))
+	float AttackDamage = 25.0f;
+
+	/**
+	 * How far along the attack animation the hit lands, as a fraction of its
+	 * length. Both characters use an 8-frame attack whose strongest pose is
+	 * frame 5, and frame 5 begins at 4/8 - hence 0.5.
+	 *
+	 * Damage is tied to the animation rather than to the key press, so a swing
+	 * that is interrupted before this point never connects.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AttackImpactFraction = 0.5f;
+
+	/**
+	 * World units per map tile. One project-wide number, so reach can be stated
+	 * in tiles instead of scattering raw world units through the code.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat", meta = (ClampMin = "1.0"))
+	float TileSize = 64.0f;
+
+	/**
+	 * How far the attack reaches, in TILES. This is the single number that
+	 * defines a character's threat range - the AI's stop distance and the melee
+	 * sphere are both derived from it, so they can never disagree.
+	 *
+	 * Guards deliberately out-range enemies: a guard must be able to strike
+	 * before the thing closing on it can strike back. See APTKGuardCharacter
+	 * and APTKEnemyCharacter for the two tiers' values.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat", meta = (ClampMin = "0.1"))
+	float AttackRangeTiles = 1.0f;
+
+	/**
+	 * Lateral half-width of the swing, as a fraction of its reach.
+	 *
+	 * The melee test is a sphere placed in front of the character, NOT the
+	 * sprite bounds: Ravager's axe and cape reach far outside his body and must
+	 * never act as a permanent weapon hitbox. This factor sets how wide that
+	 * sphere is, and therefore how many enemies one swing can catch.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat", meta = (ClampMin = "0.1", ClampMax = "0.9"))
+	float AttackHitWidthFactor = 0.45f;
+
+	/** Draws the melee sphere for one second on every swing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Debug")
+	bool bDrawAttackHit = false;
+
+	/** Seconds the corpse remains before the actor is destroyed. 0 keeps it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Health", meta = (ClampMin = "0.0"))
+	float DestroyDelayAfterDeath = 2.0f;
 
 	// ------------------------------------------------------------------
 	// Depth sorting
@@ -447,6 +579,22 @@ protected:
 	/** Facing captured when the attack began; held while bLockFacingDuringAttack. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|State")
 	EPTKFacingDirection AttackFacingDirection = EPTKFacingDirection::Down;
+
+	/**
+	 * Victims already damaged by the CURRENT swing.
+	 *
+	 * This is what makes one swing deal one hit. Without it the impact test
+	 * would fire on every tick it stayed true, and a single axe swing would
+	 * damage the same enemy several times over.
+	 */
+	UPROPERTY()
+	TSet<TObjectPtr<AActor>> AttackHitActors;
+
+	/** True once the current swing has run its impact test. */
+	bool bAttackImpactApplied = false;
+
+	/** Total length of the current attack, for locating the impact moment. */
+	float AttackDuration = 0.0f;
 
 	/** Previous frame state - used to decide whether the walk phase can carry over. */
 	EPTKMovementState PreviousMovementState = EPTKMovementState::Idle;

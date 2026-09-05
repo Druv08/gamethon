@@ -2,6 +2,7 @@
 
 #include "Core/PTKGameModeBase.h"
 
+#include "Core/PTKCombatHUD.h"
 #include "GameFramework/Pawn.h"
 #include "ProtectTheKing2D.h"
 #include "UObject/ConstructorHelpers.h"
@@ -10,6 +11,11 @@
 
 APTKGameModeBase::APTKGameModeBase()
 {
+	// Prototype combat readout: health bars and the AI state block. Pure canvas
+	// drawing, no widget assets - see APTKCombatHUD. Replaced by the real
+	// interface later.
+	HUDClass = APTKCombatHUD::StaticClass();
+
 	// Ravager is the Phase 1 test subject. Once the other guards exist this
 	// becomes a selection driven by the guard-switching system instead.
 	static ConstructorHelpers::FClassFinder<APawn> RavagerBP(

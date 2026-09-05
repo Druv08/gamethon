@@ -42,7 +42,39 @@ enum class EPTKMovementState : uint8
 {
 	Idle	UMETA(DisplayName = "Idle"),
 	Walk	UMETA(DisplayName = "Walk"),
-	Attack	UMETA(DisplayName = "Attack")
+	Attack	UMETA(DisplayName = "Attack"),
+	Dead	UMETA(DisplayName = "Dead")
+};
+
+/**
+ * Which side a character fights for.
+ *
+ * Melee only damages the opposing team, which is what stops Ravager's axe
+ * hitting the King he is defending. Kept deliberately coarse - two sides, no
+ * factions - because nothing in the design needs more than that yet.
+ */
+UENUM(BlueprintType)
+enum class EPTKTeam : uint8
+{
+	Guards	UMETA(DisplayName = "Guards"),
+	Enemies	UMETA(DisplayName = "Enemies")
+};
+
+/**
+ * The autonomous enemy's decision state.
+ *
+ * Deliberately a plain enum driven by distance checks, not a Behavior Tree.
+ * The real adaptive AI is a later phase; this is the minimum needed to prove
+ * that combat works, and a five-state machine is easier to reason about than a
+ * tree when the question is "why did it not attack".
+ */
+UENUM(BlueprintType)
+enum class EPTKEnemyState : uint8
+{
+	Idle	UMETA(DisplayName = "Idle"),
+	Chase	UMETA(DisplayName = "Chase"),
+	Attack	UMETA(DisplayName = "Attack"),
+	Dead	UMETA(DisplayName = "Dead")
 };
 
 /**
@@ -112,4 +144,11 @@ public:
 	/** Human readable name, for logging and on-screen debug only. */
 	UFUNCTION(BlueprintPure, Category = "PTK|Direction")
 	static FString DirectionToString(EPTKFacingDirection Direction);
+
+	/** Human readable state name, for logging and on-screen debug only. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Direction")
+	static FString MovementStateToString(EPTKMovementState State);
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Direction")
+	static FString EnemyStateToString(EPTKEnemyState State);
 };

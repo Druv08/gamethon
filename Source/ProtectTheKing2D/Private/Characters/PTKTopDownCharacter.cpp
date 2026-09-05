@@ -3,6 +3,9 @@
 #include "Characters/PTKTopDownCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/PTKHealthComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/OverlapResult.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/Engine.h"
@@ -192,6 +195,10 @@ APTKTopDownCharacter::APTKTopDownCharacter(const FObjectInitializer& ObjectIniti
 		TopDownCamera->PostProcessSettings.bOverride_AutoExposureBias = true;
 		TopDownCamera->PostProcessSettings.AutoExposureBias = 0.0f;
 	}
+
+	// Health lives on a component rather than on the character so enemies,
+	// guards, the King and any future destructible share one implementation.
+	HealthComponent = CreateDefaultSubobject<UPTKHealthComponent>(TEXT("Health"));
 }
 
 void APTKTopDownCharacter::OnConstruction(const FTransform& Transform)
@@ -210,6 +217,12 @@ void APTKTopDownCharacter::BeginPlay()
 	FacingDirection = DefaultFacingDirection;
 	MovementState = EPTKMovementState::Idle;
 	PreviousMovementState = EPTKMovementState::Idle;
+
+	if (HealthComponent)
+	{
+		HealthComponent->OnHealthChanged.AddDynamic(this, &APTKTopDownCharacter::HandleHealthChanged);
+		HealthComponent->OnDeath.AddDynamic(this, &APTKTopDownCharacter::HandleDeathEvent);
+	}
 	MoveInput = FVector2D::ZeroVector;
 
 	ApplyCollisionAndSpriteSettings();
@@ -252,6 +265,14 @@ void APTKTopDownCharacter::BeginPlay()
 void APTKTopDownCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// A dead character holds its last frame and stops responding to anything.
+	// Returning before the state machine is what guarantees a corpse cannot
+	// walk, attack, or be pushed into a new animation by leftover input.
+	if (MovementState == EPTKMovementState::Dead)
+	{
+		return;
+	}
 
 	const bool bMoving = MoveInput.SizeSquared() > FMath::Square(MoveDeadZone);
 
@@ -480,6 +501,11 @@ void APTKTopDownCharacter::Input_Attack(const FInputActionValue& /*Value*/)
 
 bool APTKTopDownCharacter::StartAttack()
 {
+	if (MovementState == EPTKMovementState::Dead)
+	{
+		return false;
+	}
+
 	if (MovementState == EPTKMovementState::Attack && !bAllowAttackInterrupt)
 	{
 		return false;
@@ -505,6 +531,13 @@ bool APTKTopDownCharacter::StartAttack()
 	AttackTimeRemaining = (Length > KINDA_SMALL_NUMBER)
 		? (Length / Rate)
 		: AttackFallbackDuration;
+	AttackDuration = AttackTimeRemaining;
+
+	// A fresh swing forgets who the last one hit, so a second attack on the
+	// same target connects again - while the set still blocks a single swing
+	// from landing twice.
+	AttackHitActors.Reset();
+	bAttackImpactApplied = false;
 
 	AttackFacingDirection = Direction;
 	FacingDirection = Direction;
@@ -537,6 +570,19 @@ bool APTKTopDownCharacter::TickAttack(float DeltaSeconds)
 	}
 
 	AttackTimeRemaining -= DeltaSeconds;
+
+	// Damage is tied to the animation, not to the key press: the swing only
+	// connects once it has actually reached its impact pose (frame 5 of 8).
+	if (!bAttackImpactApplied && AttackDuration > KINDA_SMALL_NUMBER)
+	{
+		const float Elapsed = AttackDuration - AttackTimeRemaining;
+		if (Elapsed >= AttackDuration * AttackImpactFraction)
+		{
+			bAttackImpactApplied = true;
+			PerformAttackHit();
+		}
+	}
+
 	if (AttackTimeRemaining > 0.0f)
 	{
 		return true;
@@ -554,6 +600,12 @@ UPaperFlipbook* APTKTopDownCharacter::SelectFlipbook_Implementation(
 {
 	switch (State)
 	{
+	case EPTKMovementState::Dead:
+		// One non-directional collapse. Null is a valid answer: UpdateAnimation
+		// then keeps whatever is already on screen, freezing the last living
+		// pose rather than blanking the character.
+		return DeathFlipbook;
+
 	case EPTKMovementState::Attack:
 		return AttackFlipbooks.GetForDirection(Direction);
 
@@ -785,5 +837,168 @@ void APTKTopDownCharacter::ValidateFlipbookConfiguration() const
 			TEXT("%s: AttackFlipbooks has %d/4 directions assigned. Attacks facing an unassigned ")
 			TEXT("direction will be refused."),
 			*GetName(), AttackSlots);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Combat
+// ---------------------------------------------------------------------------
+bool APTKTopDownCharacter::IsHostileTo(const APTKTopDownCharacter* Other) const
+{
+	return Other && Other != this && Other->GetTeam() != Team && !Other->IsDead();
+}
+
+FVector APTKTopDownCharacter::GetAttackHitCentre() const
+{
+	// The melee test sits in FRONT of the character, in the direction it is
+	// facing on screen. Facing is a flipbook choice, not an actor rotation, so
+	// the offset is built from the screen basis rather than from GetActorForwardVector.
+	FVector Offset = FVector::ZeroVector;
+	switch (FacingDirection)
+	{
+	case EPTKFacingDirection::Left:  Offset = -MovementRightVector; break;
+	case EPTKFacingDirection::Right: Offset =  MovementRightVector; break;
+	case EPTKFacingDirection::Up:    Offset =  MovementUpVector;    break;
+	case EPTKFacingDirection::Down:
+	default:                         Offset = -MovementUpVector;    break;
+	}
+	return GetActorLocation() + Offset * GetAttackHitDistance();
+}
+
+void APTKTopDownCharacter::PerformAttackHit()
+{
+	UWorld* const World = GetWorld();
+	if (!World || AttackDamage <= 0.0f)
+	{
+		return;
+	}
+
+	const FVector Centre = GetAttackHitCentre();
+
+	if (bDrawAttackHit)
+	{
+		DrawDebugSphere(World, Centre, GetAttackHitRadius(), 16, FColor::Yellow, false, 1.0f);
+	}
+
+	// A sphere overlap rather than the sprite bounds. Ravager's axe and cape
+	// reach far outside his body; treating the artwork as a hitbox would let
+	// him damage things he never swung at.
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(PTKAttackHit), false, this);
+	Params.AddIgnoredActor(this);
+
+	World->OverlapMultiByObjectType(
+		Overlaps, Centre, FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_Pawn),
+		FCollisionShape::MakeSphere(GetAttackHitRadius()), Params);
+
+	for (const FOverlapResult& Result : Overlaps)
+	{
+		APTKTopDownCharacter* Victim = Cast<APTKTopDownCharacter>(Result.GetActor());
+		if (!IsHostileTo(Victim))
+		{
+			continue;
+		}
+
+		// One swing, one hit per victim. AttackHitActors is cleared by
+		// StartAttack, so the next swing can damage the same target again.
+		bool bAlready = false;
+		AttackHitActors.Add(Victim, &bAlready);
+		if (bAlready)
+		{
+			continue;
+		}
+
+		if (UPTKHealthComponent* VictimHealth = Victim->GetHealthComponent())
+		{
+			const float Dealt = VictimHealth->ApplyDamage(AttackDamage, this);
+			if (Dealt > 0.0f)
+			{
+				OnAttackHit(Victim, Dealt);
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Health / death
+// ---------------------------------------------------------------------------
+void APTKTopDownCharacter::HandleHealthChanged(UPTKHealthComponent* /*Component*/,
+	float NewHealth, float Delta, AActor* DamageInstigator)
+{
+	if (Delta < 0.0f)
+	{
+		UE_LOG(LogPTK, Verbose, TEXT("%s hit for %.0f by %s (%.0f left)"),
+			*GetName(), -Delta, *GetNameSafe(DamageInstigator), NewHealth);
+	}
+}
+
+void APTKTopDownCharacter::HandleDeathEvent(UPTKHealthComponent* /*Component*/, AActor* Killer)
+{
+	HandleDeath(Killer);
+}
+
+void APTKTopDownCharacter::HandleDeath(AActor* Killer)
+{
+	if (MovementState == EPTKMovementState::Dead)
+	{
+		return;
+	}
+
+	MovementState = EPTKMovementState::Dead;
+	MoveInput = FVector2D::ZeroVector;
+	AttackTimeRemaining = 0.0f;
+
+	// Stop dead rather than sliding to a halt: a corpse that keeps its momentum
+	// drifts away from where it was killed.
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Move->StopMovementImmediately();
+		Move->DisableMovement();
+	}
+
+	// Collision off so the survivor can walk through the body and no further
+	// melee overlap can find it.
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		Capsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	// Player characters also lose control. Enemies have no controller input to
+	// disable, so this is a no-op for them.
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		DisableInput(PC);
+	}
+
+	// Push the collapse directly rather than waiting for UpdateAnimation: Tick
+	// returns early once dead, so nothing else would ever start it playing.
+	float DeathLength = 0.0f;
+	if (Sprite && DeathFlipbook)
+	{
+		const float Rate = FMath::Max(DeathPlayRate, KINDA_SMALL_NUMBER);
+		Sprite->SetFlipbook(DeathFlipbook);
+		Sprite->SetPlayRate(Rate);
+		// One shot: the corpse must hold its final frame, not loop back to
+		// standing up and falling over again.
+		Sprite->SetLooping(false);
+		Sprite->SetPlaybackPosition(0.0f, false);
+		Sprite->Play();
+		AppliedPlayRate = Rate;
+		DeathLength = DeathFlipbook->GetTotalDuration() / Rate;
+	}
+
+	UE_LOG(LogPTK, Log, TEXT("%s entered Dead state (killer: %s, collapse %.2fs)"),
+		*GetName(), *GetNameSafe(Killer), DeathLength);
+
+	if (DestroyDelayAfterDeath > 0.0f)
+	{
+		// The player is deliberately NOT destroyed: the defeat state has to stay
+		// on screen. Only AI corpses are cleaned up, and only after the collapse
+		// has finished playing - otherwise they pop out mid-fall.
+		if (!Cast<APlayerController>(GetController()))
+		{
+			SetLifeSpan(DeathLength + DestroyDelayAfterDeath);
+		}
 	}
 }

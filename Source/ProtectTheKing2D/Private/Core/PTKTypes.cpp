@@ -96,3 +96,27 @@ FString UPTKTypesLibrary::DirectionToString(EPTKFacingDirection Direction)
 	default:							return TEXT("Unknown");
 	}
 }
+
+FString UPTKTypesLibrary::MovementStateToString(EPTKMovementState State)
+{
+	switch (State)
+	{
+	case EPTKMovementState::Walk:   return TEXT("Walk");
+	case EPTKMovementState::Attack: return TEXT("Attack");
+	case EPTKMovementState::Dead:   return TEXT("Dead");
+	case EPTKMovementState::Idle:
+	default:                        return TEXT("Idle");
+	}
+}
+
+FString UPTKTypesLibrary::EnemyStateToString(EPTKEnemyState State)
+{
+	switch (State)
+	{
+	case EPTKEnemyState::Chase:  return TEXT("Chase");
+	case EPTKEnemyState::Attack: return TEXT("Attack");
+	case EPTKEnemyState::Dead:   return TEXT("Dead");
+	case EPTKEnemyState::Idle:
+	default:                     return TEXT("Idle");
+	}
+}

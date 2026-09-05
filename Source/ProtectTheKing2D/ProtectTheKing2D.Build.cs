@@ -18,6 +18,11 @@ public class ProtectTheKing2D : ModuleRules
 			// 2D character rendering: sprites + flipbooks + APaperCharacter.
 			"Paper2D",
 
+			// AAIController only. No Behavior Trees, no navmesh, no EQS - the
+			// enemy needs a controller so CharacterMovement consumes its input,
+			// and nothing more than that.
+			"AIModule",
+
 			// Enhanced Input: IA_Move (Axis2D), IMC_PTK_Default.
 			"EnhancedInput"
 		});
