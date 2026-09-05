@@ -1,0 +1,68 @@
+# ============================================================
+# Unreal Engine 5 — ProtectTheKing2D
+# Generated / derived folders must never be committed.
+# ============================================================
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.sln
+*.slnx
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.xcodeproj/
+*.xcworkspace/
+
+# Unreal generated
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+Platforms/*/Binaries/
+Platforms/*/Build/
+Platforms/*/Intermediate/
+
+# Plugin generated
+Plugins/**/Binaries/
+Plugins/**/Intermediate/
+
+# Compiled / packaged output
+*.dll
+*.exe
+*.lib
+*.pdb
+*.exp
+*.obj
+*.ipa
+*.apk
+Packaged/
+
+# Unreal autosave / backup
+Content/Developers/
+Content/Collections/
+*.uasset.tmp
+*.umap.tmp
+*_BuiltData.uasset
+
+# OS noise
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+desktop.ini
+
+# Local-only tool output
+Tools/_Output/
+Tools/__pycache__/
+
+# ============================================================
+# Explicitly KEPT (documented for clarity; not ignore rules):
+#   Config/    Content/    Source/    ArtSource/    Docs/
+#   Tools/     ProtectTheKing2D.uproject
+#   .gitignore .gitattributes
+# ============================================================
