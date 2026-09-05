@@ -3,6 +3,7 @@
 #include "Characters/PTKTopDownCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Combat/PTKCombatTarget.h"
 #include "Components/PTKHealthComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
@@ -256,6 +257,27 @@ void APTKTopDownCharacter::BeginPlay()
 	}
 
 	ValidateFlipbookConfiguration();
+
+	// Health provenance, once per spawn. Printed rather than trusted, because a
+	// Blueprint value silently overriding the C++ tier default is invisible
+	// until something dies far too early.
+	if (HealthComponent)
+	{
+		float ClassDefault = -1.0f;
+		if (const APTKTopDownCharacter* const CDO =
+				GetClass()->GetDefaultObject<APTKTopDownCharacter>())
+		{
+			if (const UPTKHealthComponent* const DefaultHealth = CDO->HealthComponent)
+			{
+				ClassDefault = DefaultHealth->GetMaxHealth();
+			}
+		}
+		UE_LOG(LogPTK, Warning,
+			TEXT("HEALTH INIT | %s | MaxHealth: %.1f | CurrentHealth: %.1f | ")
+			TEXT("Component MaxHealth: %.1f | Class default: %.1f | Team: %d"),
+			*GetName(), HealthComponent->GetMaxHealth(), HealthComponent->GetCurrentHealth(),
+			HealthComponent->GetMaxHealth(), ClassDefault, static_cast<int32>(Team));
+	}
 
 	// Show the correct idle frame on the very first tick.
 	UpdateAnimation();
@@ -843,9 +865,21 @@ void APTKTopDownCharacter::ValidateFlipbookConfiguration() const
 // ---------------------------------------------------------------------------
 // Combat
 // ---------------------------------------------------------------------------
-bool APTKTopDownCharacter::IsHostileTo(const APTKTopDownCharacter* Other) const
+UPTKHealthComponent* APTKTopDownCharacter::GetCombatHealth() const
 {
-	return Other && Other != this && Other->GetTeam() != Team && !Other->IsDead();
+	return HealthComponent;
+}
+
+bool APTKTopDownCharacter::IsHostileTo(const AActor* Other) const
+{
+	// Delegated so that "who counts as an enemy" is answered in exactly one
+	// place for guards, enemies, the King and anything added later.
+	return PTKCombat::IsHostileTarget(this, Other);
+}
+
+bool APTKTopDownCharacter::IsValidAttackVictim(const AActor* Victim) const
+{
+	return IsHostileTo(Victim);
 }
 
 FVector APTKTopDownCharacter::GetAttackHitCentre() const
@@ -894,8 +928,11 @@ void APTKTopDownCharacter::PerformAttackHit()
 
 	for (const FOverlapResult& Result : Overlaps)
 	{
-		APTKTopDownCharacter* Victim = Cast<APTKTopDownCharacter>(Result.GetActor());
-		if (!IsHostileTo(Victim))
+		// No cast to a character. A victim is anything that implements
+		// IPTKCombatTarget - which is what lets a swing land on the King, who
+		// is a stationary AActor and always will be.
+		AActor* const Victim = Result.GetActor();
+		if (!IsValidAttackVictim(Victim))
 		{
 			continue;
 		}
@@ -909,12 +946,16 @@ void APTKTopDownCharacter::PerformAttackHit()
 			continue;
 		}
 
-		if (UPTKHealthComponent* VictimHealth = Victim->GetHealthComponent())
+		if (UPTKHealthComponent* VictimHealth = PTKCombat::GetHealth(Victim))
 		{
 			const float Dealt = VictimHealth->ApplyDamage(AttackDamage, this);
 			if (Dealt > 0.0f)
 			{
 				OnAttackHit(Victim, Dealt);
+				if (!bAttackHitsMultipleTargets)
+				{
+					return;
+				}
 			}
 		}
 	}
@@ -926,10 +967,32 @@ void APTKTopDownCharacter::PerformAttackHit()
 void APTKTopDownCharacter::HandleHealthChanged(UPTKHealthComponent* /*Component*/,
 	float NewHealth, float Delta, AActor* DamageInstigator)
 {
-	if (Delta < 0.0f)
+	if (Delta >= 0.0f)
 	{
-		UE_LOG(LogPTK, Verbose, TEXT("%s hit for %.0f by %s (%.0f left)"),
-			*GetName(), -Delta, *GetNameSafe(DamageInstigator), NewHealth);
+		return;
+	}
+
+	// One line per actual damage event - never per tick. A single hit that is
+	// far larger than any weapon in the game is the signature of a debug kill
+	// leaking into normal play, and this is what makes it obvious.
+	UE_LOG(LogPTK, Verbose,
+		TEXT("DAMAGE | %s | Damage: %.1f | HP Before: %.1f | HP After: %.1f | ")
+		TEXT("Causer: %s | Instigator: %s | Time: %.2f"),
+		*GetName(), -Delta, NewHealth - Delta, NewHealth,
+		*GetNameSafe(DamageInstigator),
+		DamageInstigator ? *GetNameSafe(DamageInstigator->GetInstigator()) : TEXT("none"),
+		GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f);
+
+	if (NewHealth <= 0.0f)
+	{
+		// The exact blow that ended it, called out separately so the cause of a
+		// death is never something you have to reconstruct from a scroll-back.
+		UE_LOG(LogPTK, Warning,
+			TEXT("DEATH TRIGGER | %s | HP Before: %.1f | Damage: %.1f | HP After: %.1f | ")
+			TEXT("Source: %s | Time: %.2f"),
+			*GetName(), NewHealth - Delta, -Delta, NewHealth,
+			*GetNameSafe(DamageInstigator),
+			GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f);
 	}
 }
 

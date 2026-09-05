@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/PTKCombatTarget.h"
 #include "Core/PTKTypes.h"
 #include "GameFramework/Actor.h"
 #include "PTKKingCharacter.generated.h"
@@ -54,12 +55,21 @@ class UPTKHealthComponent;
  * is a later phase and will hang off the same call.
  */
 UCLASS()
-class PROTECTTHEKING2D_API APTKKingCharacter : public AActor
+class PROTECTTHEKING2D_API APTKKingCharacter : public AActor, public IPTKCombatTarget
 {
 	GENERATED_BODY()
 
 public:
 	APTKKingCharacter();
+
+	// --- IPTKCombatTarget ------------------------------------------
+	//
+	// This is the whole point of the interface: the King is attackable
+	// without being a Pawn. He gains no movement, no controller and no
+	// input by answering these three questions.
+	virtual UPTKHealthComponent* GetCombatHealth() const override { return HealthComponent; }
+	virtual EPTKTeam GetCombatTeam() const override { return Team; }
+	virtual bool IsCombatDead() const override { return IsDead(); }
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -107,6 +117,10 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PTK|King|Debug")
 	void DebugSetAlertRadius(float NewRadius);
+
+	/** Turns the health heartbeat on or off at runtime. */
+	UFUNCTION(BlueprintCallable, Category = "PTK|King|Debug")
+	void DebugSetHealthHeartbeat(bool bEnabled) { bLogHealthHeartbeat = bEnabled; HeartbeatTimer = 0.0f; }
 
 protected:
 	/** Root. Query-only so the King never physically obstructs the fight. */
@@ -196,6 +210,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Debug")
 	bool bDrawAlertRadius = false;
 
+	/**
+	 * Periodic "still at N HP" line, for proving health does NOT move.
+	 *
+	 * OFF by default, so normal play logs only real damage events. It is a
+	 * heartbeat, not a per-tick trace: absence of damage lines proves nothing
+	 * to someone who suspects the logging itself is broken, whereas a steady
+	 * 15000/15000 every few seconds is positive evidence.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Debug")
+	bool bLogHealthHeartbeat = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Debug", meta = (ClampMin = "0.5"))
+	float HealthHeartbeatInterval = 5.0f;
+
 	// ------------------------------------------------------------------
 	// Rendering
 	// ------------------------------------------------------------------
@@ -239,6 +267,7 @@ protected:
 	float StateTimeRemaining = 0.0f;
 
 	float AlertScanTimer = 0.0f;
+	float HeartbeatTimer = 0.0f;
 
 	/** Where the King stood at BeginPlay. Re-asserted every tick. */
 	FVector AnchorLocation = FVector::ZeroVector;

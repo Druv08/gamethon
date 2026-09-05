@@ -69,7 +69,44 @@ public:
 	UFUNCTION(Exec)
 	void PTKKingAlertRadius(float Radius = 600.0f);
 
-	virtual void BeginPlay() override;
+	/**
+	 * Runs the scripted King check. TYPE IT YOURSELF - nothing calls this.
+	 *
+	 * It deliberately damages and then KILLS the King, so it is a console
+	 * command and nothing else: no BeginPlay hook, no command-line switch, no
+	 * timer registered until the moment someone types PTKKingTest.
+	 */
+	UFUNCTION(Exec)
+	void PTKKingTest();
+
+	/**
+	 * Makes the player character swing, so the guard's multi-target arc can be
+	 * exercised without a human at the keyboard. Manual only.
+	 *
+	 * StartDelay exists because enemies begin the match across the arena: a
+	 * swing fired the instant the level loads connects with nothing and proves
+	 * nothing.
+	 */
+	UFUNCTION(Exec)
+	void PTKGuardAttack(int32 Count = 1, float Interval = 1.2f, float StartDelay = 0.0f);
+
+	/** Turns the King's health heartbeat on (1) or off (0). */
+	UFUNCTION(Exec)
+	void PTKKingHeartbeat(int32 bEnabled = 1);
+
+	/** Kills the player guard outright, to test what the enemies do next. */
+	UFUNCTION(Exec)
+	void PTKGuardKill(float Delay = 0.0f);
+
+	/**
+	 * Screenshot after Delay seconds, named king_<Name>.png.
+	 *
+	 * -ExecCmds all fire the instant the map loads, which is before the
+	 * enemies have crossed the arena - so a capture worth looking at has to be
+	 * able to wait.
+	 */
+	UFUNCTION(Exec)
+	void PTKShot(float Delay = 0.0f, const FString& Name = TEXT("shot"));
 
 protected:
 	/** Draws a labelled bar with a border. Fraction is clamped to 0..1. */
@@ -89,23 +126,19 @@ protected:
 	APTKKingCharacter* FindKing() const;
 
 	// ------------------------------------------------------------------
-	// Scripted PIE check, enabled with -ptkkingtest on the command line.
+	// Scripted King check. MANUAL ONLY - reached solely by typing
+	// PTKKingTest at the console.
 	//
-	// Prototype scaffolding, deliberately parked in the prototype HUD rather
-	// than in APTKKingCharacter: the King should not carry test code, and this
-	// whole class is already marked for replacement. Without the switch none
-	// of it runs and no timer is ever registered.
-	//
-	// It drives one deterministic pass over every King state - cast, hit,
-	// repeated hit, death, damage-after-death - so a single run proves the
-	// state machine instead of needing a human at the keyboard.
+	// It was previously armed from BeginPlay whenever -ptkkingtest appeared on
+	// the command line. That was a mistake: FCommandLine is process-global and
+	// survives for the whole editor session, so once the flag was present
+	// EVERY subsequent Play ran a sequence that damages and kills the King -
+	// which looked exactly like the King losing health on his own. A routine
+	// that deals damage must never be reachable from BeginPlay.
 	// ------------------------------------------------------------------
 
 	/** Logs the King's state, health and position under a step label. */
 	void LogKingStatus(const FString& Stage);
-
-	/** Registers the timed sequence. */
-	void StartKingSelfTest();
 
 	/**
 	 * Logs the structural facts behind "the King ignores movement input".

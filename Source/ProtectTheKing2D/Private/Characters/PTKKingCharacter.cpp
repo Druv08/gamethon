@@ -132,6 +132,19 @@ void APTKKingCharacter::Tick(float DeltaSeconds)
 		SetActorLocation(AnchorLocation, false, nullptr, ETeleportType::TeleportPhysics);
 	}
 
+	if (bLogHealthHeartbeat && HealthComponent)
+	{
+		HeartbeatTimer -= DeltaSeconds;
+		if (HeartbeatTimer <= 0.0f)
+		{
+			HeartbeatTimer = HealthHeartbeatInterval;
+			UE_LOG(LogPTK, Warning, TEXT("KING HEARTBEAT | t=%6.1f | HP %.1f/%.1f | state=%s"),
+				GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f,
+				HealthComponent->GetCurrentHealth(), HealthComponent->GetMaxHealth(),
+				*UPTKTypesLibrary::KingStateToString(State));
+		}
+	}
+
 	if (State == EPTKKingState::Dead)
 	{
 		return;
@@ -328,9 +341,20 @@ void APTKKingCharacter::HandleHealthChanged(UPTKHealthComponent* /*Component*/,
 		return;
 	}
 
-	UE_LOG(LogPTK, Verbose, TEXT("%s took %.0f damage from %s -> %.0f/%.0f HP"),
-		*GetName(), -Delta, DamageInstigator ? *DamageInstigator->GetName() : TEXT("unknown"),
-		NewHealth, HealthComponent ? HealthComponent->GetMaxHealth() : 0.0f);
+	// Deliberately Warning, and deliberately only on an actual damage event -
+	// never per tick. The King should be untouched unless something really
+	// hit him, so any line at all here is worth reading, and it carries enough
+	// provenance to identify the culprit without a debugger.
+	UE_LOG(LogPTK, Warning,
+		TEXT("KING DAMAGE | Amount: %.1f | HP before: %.1f | HP after: %.1f | ")
+		TEXT("Causer: %s | Instigator: %s | Source: %hs | Time: %.2f"),
+		-Delta,
+		NewHealth - Delta,
+		NewHealth,
+		*GetNameSafe(DamageInstigator),
+		DamageInstigator ? *GetNameSafe(DamageInstigator->GetInstigator()) : TEXT("none"),
+		__FUNCTION__,
+		GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f);
 
 	// The death broadcast follows this one, and it wins: starting a hit
 	// reaction here would immediately be overwritten by the collapse.

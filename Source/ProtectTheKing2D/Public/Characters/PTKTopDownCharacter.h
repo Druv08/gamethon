@@ -5,6 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Combat/PTKCombatTarget.h"
 #include "Core/PTKTypes.h"
 #include "PTKTopDownCharacter.generated.h"
 
@@ -66,9 +67,15 @@ struct FInputActionValue;
  * more flexible for a shared base class.
  */
 UCLASS(Abstract, Blueprintable)
-class PROTECTTHEKING2D_API APTKTopDownCharacter : public ACharacter
+class PROTECTTHEKING2D_API APTKTopDownCharacter : public ACharacter, public IPTKCombatTarget
 {
 	GENERATED_BODY()
+
+public:
+	// --- IPTKCombatTarget ------------------------------------------
+	virtual UPTKHealthComponent* GetCombatHealth() const override;
+	virtual EPTKTeam GetCombatTeam() const override { return Team; }
+	virtual bool IsCombatDead() const override { return IsDead(); }
 
 public:
 	APTKTopDownCharacter(const FObjectInitializer& ObjectInitializer);
@@ -128,7 +135,16 @@ public:
 	EPTKTeam GetTeam() const { return Team; }
 
 	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
-	bool IsHostileTo(const APTKTopDownCharacter* Other) const;
+	bool IsHostileTo(const AActor* Other) const;
+
+	/**
+	 * Whether this swing is allowed to damage Victim.
+	 *
+	 * Hostility is the baseline. Subclasses narrow it: an enemy swinging at
+	 * one target must not damage everything else standing in the arc, which is
+	 * how a blow aimed at the player ends up landing on a bystander.
+	 */
+	virtual bool IsValidAttackVictim(const AActor* Victim) const;
 
 	/** Centre of the melee test for the current facing, in world space. */
 	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
@@ -208,7 +224,7 @@ protected:
 
 	/** Fired after a swing connects, once per victim. Prototype hook for VFX. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "PTK|Combat")
-	void OnAttackHit(APTKTopDownCharacter* Victim, float DamageDealt);
+	void OnAttackHit(AActor* Victim, float DamageDealt);
 
 	/** Pushes IdleFlipbooks / WalkFlipbooks onto the sprite component. */
 	void UpdateAnimation();
@@ -479,6 +495,16 @@ protected:
 	/** Draws the melee sphere for one second on every swing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Debug")
 	bool bDrawAttackHit = false;
+
+	/**
+	 * True: one swing may damage every valid victim in the arc.
+	 * False: it stops at the first, so a single blow injures a single body.
+	 *
+	 * Guards sweep a crowd; that is the point of a big axe. Enemies do not -
+	 * see APTKEnemyCharacter, which turns this off.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat")
+	bool bAttackHitsMultipleTargets = true;
 
 	/** Seconds the corpse remains before the actor is destroyed. 0 keeps it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Health", meta = (ClampMin = "0.0"))

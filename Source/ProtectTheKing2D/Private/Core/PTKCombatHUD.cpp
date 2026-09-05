@@ -137,14 +137,18 @@ void APTKCombatHUD::DrawDebugPanel(APTKTopDownCharacter* Player)
 		UPTKHealthComponent* const Health = Enemy->GetHealthComponent();
 		const float Distance = Enemy->GetDistanceToTarget();
 
+		// Target is printed by name and first, because the question this panel
+		// exists to answer is "what is it actually going for" - which is how a
+		// failed hand-off from a dead guard to the King is spotted at a glance.
 		DrawText(FString::Printf(
-			TEXT("%-10s HP %.0f/%.0f   %s   facing %s   dist %s   cd %.2f"),
+			TEXT("%-10s HP %.0f/%.0f  Target: %-16s  AI: %-6s  Dist: %-5s  Range: %.0f  cd %.2f"),
 			*Enemy->GetEnemyId().ToString(),
 			Health ? Health->GetCurrentHealth() : 0.0f,
 			Health ? Health->GetMaxHealth() : 0.0f,
+			Enemy->GetTarget() ? *Enemy->GetTarget()->GetName() : TEXT("none"),
 			*UPTKTypesLibrary::EnemyStateToString(Enemy->GetEnemyState()),
-			*UPTKTypesLibrary::DirectionToString(Enemy->GetFacingDirection()),
 			Distance < 0.0f ? TEXT("--") : *FString::Printf(TEXT("%.0f"), Distance),
+			Enemy->GetAttackReach(),
 			Enemy->GetAttackCooldownRemaining()),
 			PTKHUDColours::Text, X, Y, Font);
 		Y += 16.0f;
@@ -219,6 +223,102 @@ void APTKCombatHUD::DrawKingDefeatBanner()
 	DrawText(Message, PTKHUDColours::KingGold, X, Y, GEngine->GetLargeFont());
 }
 
+void APTKCombatHUD::PTKGuardKill(float Delay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			APTKTopDownCharacter* const Player =
+				Cast<APTKTopDownCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+			if (!Player)
+			{
+				return;
+			}
+			if (UPTKHealthComponent* const Health = Player->GetHealthComponent())
+			{
+				// Shouted, not whispered. This applies the guard's ENTIRE
+				// remaining health as a single blow, so in a log it looks
+				// identical to "he suddenly died for no reason" - the one thing
+				// that must never be mistaken for gameplay. If this line is
+				// absent, the death was not caused by a debug command.
+				UE_LOG(LogPTK, Warning,
+					TEXT("*** DEBUG KILL (console command, NOT gameplay) *** ")
+					TEXT("felling %s from %.0f HP in one blow"),
+					*Player->GetName(), Health->GetCurrentHealth());
+				Health->ApplyDamage(Health->GetCurrentHealth(), Player);
+			}
+		}), FMath::Max(Delay, 0.01f), false);
+}
+
+void APTKCombatHUD::PTKShot(float Delay, const FString& Name)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FString Safe = Name;
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this, Safe]()
+		{
+			if (APlayerController* const PC = GetOwningPlayerController())
+			{
+				UE_LOG(LogPTK, Warning, TEXT("PTKShot: capturing king_%s"), *Safe);
+				PC->ConsoleCommand(FString::Printf(
+					TEXT("HighResShot 1280x720 filename=king_%s"), *Safe), true);
+			}
+		}), FMath::Max(Delay, 0.01f), false);
+}
+
+void APTKCombatHUD::PTKKingHeartbeat(int32 bEnabled)
+{
+	if (APTKKingCharacter* const King = FindKing())
+	{
+		King->DebugSetHealthHeartbeat(bEnabled != 0);
+		UE_LOG(LogPTK, Warning, TEXT("King health heartbeat %s"),
+			bEnabled ? TEXT("ON") : TEXT("OFF"));
+	}
+}
+
+void APTKCombatHUD::PTKGuardAttack(int32 Count, float Interval, float StartDelay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	Count = FMath::Clamp(Count, 1, 60);
+	Interval = FMath::Max(Interval, 0.1f);
+
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FTimerHandle Handle;
+		World->GetTimerManager().SetTimer(Handle,
+			FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				APTKTopDownCharacter* const Player =
+					Cast<APTKTopDownCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+				if (Player)
+				{
+					Player->StartAttack();
+				}
+			}), FMath::Max(StartDelay + i * Interval, 0.01f), false);
+	}
+
+	UE_LOG(LogPTK, Warning, TEXT("PTKGuardAttack: %d swing(s), every %.1fs, starting at +%.1fs"),
+		Count, Interval, StartDelay);
+}
+
 void APTKCombatHUD::PTKKingAlertRadius(float Radius)
 {
 	if (APTKKingCharacter* const King = FindKing())
@@ -268,7 +368,7 @@ void APTKCombatHUD::LogKingStatus(const FString& Stage)
 		P.X, P.Y, P.Z);
 }
 
-void APTKCombatHUD::StartKingSelfTest()
+void APTKCombatHUD::PTKKingTest()
 {
 	UWorld* const World = GetWorld();
 	if (!World)
@@ -276,7 +376,8 @@ void APTKCombatHUD::StartKingSelfTest()
 		return;
 	}
 
-	UE_LOG(LogPTK, Warning, TEXT("KINGTEST sequence armed (-ptkkingtest)"));
+	UE_LOG(LogPTK, Warning,
+		TEXT("KINGTEST sequence started BY HAND - this damages and kills the King"));
 
 	// One-shot, after everything has finished spawning and possessing.
 	FTimerHandle IsolationHandle;
@@ -366,16 +467,6 @@ void APTKCombatHUD::StartKingSelfTest()
 				}
 				LogKingStatus(Label);
 			}), Step.Time, false);
-	}
-}
-
-void APTKCombatHUD::BeginPlay()
-{
-	Super::BeginPlay();
-
-	if (FParse::Param(FCommandLine::Get(), TEXT("ptkkingtest")))
-	{
-		StartKingSelfTest();
 	}
 }
 

@@ -53,8 +53,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Enemy")
 	EPTKEnemyState GetEnemyState() const { return EnemyState; }
 
+	/**
+	 * Whatever this enemy is currently trying to kill.
+	 *
+	 * An AActor, not a character: the King is a valid target and is not a
+	 * Pawn. Everything the AI needs from it comes through IPTKCombatTarget or
+	 * from AActor itself.
+	 */
 	UFUNCTION(BlueprintPure, Category = "PTK|Enemy")
-	APTKTopDownCharacter* GetTarget() const { return Target; }
+	AActor* GetTarget() const { return Target; }
+
+	/**
+	 * An enemy damages the one character it chose to attack, and nobody else.
+	 *
+	 * The inherited sphere is a proximity test, not an intent test: on its own
+	 * it damages every hostile body inside the arc, so a Swarm Node swinging
+	 * at the player would also injure whatever else happened to be standing
+	 * there. Requiring Victim == Target makes the swing mean what the AI
+	 * decided it meant.
+	 */
+	virtual bool IsValidAttackVictim(const AActor* Victim) const override;
 
 	/** Distance to the current target, or -1 when there is none. */
 	UFUNCTION(BlueprintPure, Category = "PTK|Enemy")
@@ -80,7 +98,7 @@ protected:
 	 * one enemy against one player, and guessing at the later targeting rules
 	 * would be work thrown away.
 	 */
-	virtual APTKTopDownCharacter* FindTarget() const;
+	virtual AActor* FindTarget() const;
 
 	/**
 	 * Screen-space movement input for this frame, in the same convention the
@@ -90,10 +108,10 @@ protected:
 	 * Override this to add pathing or lane restrictions later; nothing else in
 	 * the class needs to know how the direction was chosen.
 	 */
-	virtual FVector2D ComputeDesiredInput(const APTKTopDownCharacter& InTarget) const;
+	virtual FVector2D ComputeDesiredInput(const FVector& TargetLocation) const;
 
 	/** Pure direction to the target, without crowd avoidance. Drives facing. */
-	FVector2D ComputeBearingTo(const APTKTopDownCharacter& InTarget) const;
+	FVector2D ComputeBearingTo(const FVector& TargetLocation) const;
 
 	/** Combined push away from nearby enemies. Zero when nobody is close. */
 	FVector2D ComputeSeparation() const;
@@ -199,7 +217,7 @@ protected:
 	EPTKEnemyState EnemyState = EPTKEnemyState::Idle;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Enemy")
-	TObjectPtr<APTKTopDownCharacter> Target;
+	TObjectPtr<AActor> Target;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Enemy")
 	float AttackCooldownRemaining = 0.0f;

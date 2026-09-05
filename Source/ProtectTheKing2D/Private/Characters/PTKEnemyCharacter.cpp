@@ -3,6 +3,8 @@
 #include "Characters/PTKEnemyCharacter.h"
 
 #include "AIController.h"
+#include "Combat/PTKCombatTarget.h"
+#include "EngineUtils.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PTKHealthComponent.h"
 #include "DrawDebugHelpers.h"
@@ -33,6 +35,9 @@ APTKEnemyCharacter::APTKEnemyCharacter(const FObjectInitializer& ObjectInitializ
 	AttackHitWidthFactor = 0.45f;
 	AttackDamage = 15.0f;
 
+	// A Swarm Node bites one thing at a time. Only the guard's axe sweeps.
+	bAttackHitsMultipleTargets = false;
+
 	// Enemies never own the view. Leaving the rig enabled would give every
 	// spawned creature a camera competing to become the view target.
 	bEnableCameraRig = false;
@@ -59,13 +64,66 @@ float APTKEnemyCharacter::GetDistanceToTarget() const
 	return Target ? FVector::Dist(GetActorLocation(), Target->GetActorLocation()) : -1.0f;
 }
 
-APTKTopDownCharacter* APTKEnemyCharacter::FindTarget() const
+bool APTKEnemyCharacter::IsValidAttackVictim(const AActor* Victim) const
 {
-	// One enemy, one player, for this phase. Threat tables, King targeting and
-	// guard selection are later work and are deliberately absent.
-	APawn* const PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
-	APTKTopDownCharacter* const Candidate = Cast<APTKTopDownCharacter>(PlayerPawn);
-	return IsHostileTo(Candidate) ? Candidate : nullptr;
+	// Hostile AND the actual target. Without the second half a bite aimed at
+	// one body would also injure anything else standing in the arc - including
+	// the King, once he became reachable at all.
+	return Super::IsValidAttackVictim(Victim) && Victim == Target;
+}
+
+AActor* APTKEnemyCharacter::FindTarget() const
+{
+	// Priority: the nearest living guard, and the King only when no guard is
+	// left standing. That is the whole rule for now - no threat tables, no
+	// scoring, no memory of who hurt whom.
+	//
+	// Guards are found by iterating the character base rather than by looking
+	// up a named Blueprint, so Aegis, Wraith, Reaver and Sentinel are picked up
+	// the day they exist without this function changing.
+	const FVector Origin = GetActorLocation();
+
+	AActor* Best = nullptr;
+	float BestDistanceSq = TNumericLimits<float>::Max();
+
+	for (TActorIterator<APTKTopDownCharacter> It(GetWorld()); It; ++It)
+	{
+		APTKTopDownCharacter* const Guard = *It;
+		if (Guard == this || !PTKCombat::IsHostileTarget(this, Guard))
+		{
+			continue;
+		}
+		const float DistanceSq = FVector::DistSquared(Origin, Guard->GetActorLocation());
+		if (DistanceSq < BestDistanceSq)
+		{
+			BestDistanceSq = DistanceSq;
+			Best = Guard;
+		}
+	}
+
+	if (Best)
+	{
+		return Best;
+	}
+
+	// No guard alive. Fall back to any other hostile combat target - which is
+	// the King. This second sweep walks every actor, so it is deliberately
+	// placed behind the early return: it only ever runs once the defenders are
+	// gone, never while a fight is in progress.
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		AActor* const Candidate = *It;
+		if (Candidate != this && PTKCombat::IsHostileTarget(this, Candidate))
+		{
+			const float DistanceSq = FVector::DistSquared(Origin, Candidate->GetActorLocation());
+			if (DistanceSq < BestDistanceSq)
+			{
+				BestDistanceSq = DistanceSq;
+				Best = Candidate;
+			}
+		}
+	}
+	return Best;
 }
 
 FVector2D APTKEnemyCharacter::ToScreenSpace(const FVector& WorldOffset) const
@@ -77,13 +135,13 @@ FVector2D APTKEnemyCharacter::ToScreenSpace(const FVector& WorldOffset) const
 	                 FVector::DotProduct(WorldOffset, MovementUpVector));
 }
 
-FVector2D APTKEnemyCharacter::ComputeBearingTo(const APTKTopDownCharacter& InTarget) const
+FVector2D APTKEnemyCharacter::ComputeBearingTo(const FVector& TargetLocation) const
 {
 	// Pure direction to the target, with no crowd avoidance mixed in. Facing is
 	// chosen from THIS rather than from the steering vector: an enemy shouldering
 	// past a neighbour should still look at what it is attacking, not at wherever
 	// separation happens to be pushing it.
-	FVector2D Bearing = ToScreenSpace(InTarget.GetActorLocation() - GetActorLocation());
+	FVector2D Bearing = ToScreenSpace(TargetLocation - GetActorLocation());
 	const float Size = Bearing.Size();
 	return (Size > KINDA_SMALL_NUMBER) ? (Bearing / Size) : FVector2D::ZeroVector;
 }
@@ -142,12 +200,12 @@ FVector2D APTKEnemyCharacter::ComputeSeparation() const
 	return Push;
 }
 
-FVector2D APTKEnemyCharacter::ComputeDesiredInput(const APTKTopDownCharacter& InTarget) const
+FVector2D APTKEnemyCharacter::ComputeDesiredInput(const FVector& TargetLocation) const
 {
 	// Straight-line steering across open ground, nudged sideways by anyone in
 	// the way. The arena has no lanes yet; when the real path system lands, this
 	// is the only method that changes.
-	FVector2D Input = ComputeBearingTo(InTarget) + ComputeSeparation() * SeparationWeight;
+	FVector2D Input = ComputeBearingTo(TargetLocation) + ComputeSeparation() * SeparationWeight;
 
 	const float Size = Input.Size();
 	return (Size > KINDA_SMALL_NUMBER) ? (Input / Size) : FVector2D::ZeroVector;
@@ -180,11 +238,20 @@ void APTKEnemyCharacter::Tick(float DeltaSeconds)
 		AttackCooldownRemaining = FMath::Max(0.0f, AttackCooldownRemaining - DeltaSeconds);
 	}
 
+	// Re-acquire the moment the current target stops being a target - not on
+	// the next scheduled refresh. Otherwise an enemy keeps swinging at a fresh
+	// corpse for up to TargetRefreshInterval before noticing.
 	TargetRefreshTimer -= DeltaSeconds;
-	if (!Target || Target->IsDead() || TargetRefreshTimer <= 0.0f)
+	if (!PTKCombat::IsEngageable(Target) || TargetRefreshTimer <= 0.0f)
 	{
 		TargetRefreshTimer = TargetRefreshInterval;
-		Target = FindTarget();
+		AActor* const Reacquired = FindTarget();
+		if (Reacquired != Target)
+		{
+			UE_LOG(LogPTK, Log, TEXT("%s target: %s -> %s"),
+				*GetName(), *GetNameSafe(Target), *GetNameSafe(Reacquired));
+			Target = Reacquired;
+		}
 	}
 
 	// Once a second, on one line: everything needed to answer "why is it not
@@ -252,7 +319,7 @@ void APTKEnemyCharacter::Tick(float DeltaSeconds)
 	if (!bInRange)
 	{
 		EnemyState = EPTKEnemyState::Chase;
-		SetMoveInput(ComputeDesiredInput(*Target));
+		SetMoveInput(ComputeDesiredInput(Target->GetActorLocation()));
 		return;
 	}
 
@@ -264,7 +331,7 @@ void APTKEnemyCharacter::Tick(float DeltaSeconds)
 	// because the base class only refreshes it while moving. Feeding the
 	// direction-from-input rule the same vector chase would have used keeps the
 	// enemy's attack facing consistent with its walk facing.
-	const FVector2D Bearing = ComputeBearingTo(*Target);
+	const FVector2D Bearing = ComputeBearingTo(Target->GetActorLocation());
 	SetFacingDirection(UPTKTypesLibrary::DirectionFromInput(
 		Bearing, GetFacingDirection(), MoveDeadZone, FacingHysteresis));
 
