@@ -120,3 +120,16 @@ FString UPTKTypesLibrary::EnemyStateToString(EPTKEnemyState State)
 	default:                     return TEXT("Idle");
 	}
 }
+
+FString UPTKTypesLibrary::KingStateToString(EPTKKingState State)
+{
+	switch (State)
+	{
+	case EPTKKingState::Alert:     return TEXT("Alert");
+	case EPTKKingState::PowerCast: return TEXT("PowerCast");
+	case EPTKKingState::Hit:       return TEXT("Hit");
+	case EPTKKingState::Dead:      return TEXT("Dead");
+	case EPTKKingState::Idle:
+	default:                       return TEXT("Idle");
+	}
+}

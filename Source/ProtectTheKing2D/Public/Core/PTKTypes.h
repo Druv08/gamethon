@@ -57,7 +57,37 @@ UENUM(BlueprintType)
 enum class EPTKTeam : uint8
 {
 	Guards	UMETA(DisplayName = "Guards"),
-	Enemies	UMETA(DisplayName = "Enemies")
+	Enemies	UMETA(DisplayName = "Enemies"),
+	/**
+	 * The protected objective. His own side, not a guard.
+	 *
+	 * He is listed here so that targeting can name him later, but note that
+	 * nothing today can hit him by accident: the King is an AActor, not an
+	 * APTKTopDownCharacter, so the melee sweep's cast rejects him before team
+	 * is ever consulted. Appended last - never reorder, or saved Blueprint
+	 * defaults change meaning silently.
+	 */
+	King	UMETA(DisplayName = "King")
+};
+
+/**
+ * The King's animation state.
+ *
+ * There is deliberately no Walk. The King is a fixed objective: everything
+ * here is something that happens TO him or something he does standing still.
+ *
+ * Idle and Alert are steady states chosen by whether an enemy is nearby.
+ * PowerCast and Hit are timed - they play once and hand back to whichever of
+ * those two is then correct. Dead is terminal and absorbs everything.
+ */
+UENUM(BlueprintType)
+enum class EPTKKingState : uint8
+{
+	Idle		UMETA(DisplayName = "Idle"),
+	Alert		UMETA(DisplayName = "Alert"),
+	PowerCast	UMETA(DisplayName = "Power Cast"),
+	Hit			UMETA(DisplayName = "Hit"),
+	Dead		UMETA(DisplayName = "Dead")
 };
 
 /**
@@ -151,4 +181,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "PTK|Direction")
 	static FString EnemyStateToString(EPTKEnemyState State);
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Direction")
+	static FString KingStateToString(EPTKKingState State);
 };

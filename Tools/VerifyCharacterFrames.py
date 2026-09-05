@@ -39,6 +39,8 @@ CHARACTERS = {
         # 16 px taller. The pivot is identical, so nothing moves.
         canvas_overrides={"Death": (192, 208)},
         animations=(("Idle", 1), ("Walk", 8), ("Attack", 8), ("Death", 8)),
+        nondirectional=("Death",),
+        holdstill=("Walk",),
         # Ravager's armour is dark; his energy is blue.
         effect=lambda r, g, b: b > 140 and b - r > 70,
     ),
@@ -49,8 +51,26 @@ CHARACTERS = {
         # No idle art was supplied for Swarm Node - see the report. Walk frame 1
         # stands in at runtime, so there is no Idle folder to check.
         animations=(("Walk", 8), ("Attack", 8), ("Death", 8)),
+        nondirectional=("Death",),
+        holdstill=("Walk",),
         # The hot beam, not the dark red limb nodes.
         effect=lambda r, g, b: r > 190 and g > 70,
+    ),
+    "King": dict(
+        root=os.path.join(PROJECT, "ArtSource", "Characters", "King", "Frames"),
+        # Taller than everyone else: the power cast's starburst breaks 195px
+        # above his feet. One canvas for all five states, so nothing pops.
+        canvas=(192, 232), pivot=(96, 208),
+        animations=(("Idle", 8), ("Alert", 8), ("PowerCast", 8), ("Death", 8)),
+        # The King never turns to face anything - he is a fixed objective, so
+        # every one of his animations is a single non-directional sequence.
+        nondirectional=("Idle", "Alert", "PowerCast", "Death"),
+        # Idle is the loop that must not travel; Alert and PowerCast are
+        # deliberate reactions and Death is a collapse.
+        holdstill=("Idle",),
+        # Blue glow only. His robes are blue and his armour gold, so a warm
+        # rule would classify his own crown as an effect.
+        effect=lambda r, g, b: b > 150 and b - r > 60,
     ),
 }
 
@@ -130,13 +150,19 @@ def canvas_for(cfg, anim):
     return cfg.get("canvas_overrides", {}).get(anim, cfg["canvas"])
 
 
+def dirs_for(cfg, anim):
+    """The directions this animation is drawn in - one entry if it has none."""
+    return ["Down"] if anim in cfg.get("nondirectional", ()) else list(DIRECTIONS)
+
+
 def sequence(cfg, anim, direction, count):
-    if anim == "Idle":
-        return [os.path.join(cfg["root"], "Idle", "Idle_{0}.png".format(direction))]
-    if anim == "Death":
-        # Death is not directional - one sequence, not four.
-        return [os.path.join(cfg["root"], "Death", "Death_{0:02d}.png".format(i + 1))
+    if anim in cfg.get("nondirectional", ()):
+        # One flat sequence, no direction subfolder.
+        return [os.path.join(cfg["root"], anim, "{0}_{1:02d}.png".format(anim, i + 1))
                 for i in range(count)]
+    if count == 1:
+        # A single held pose per direction, e.g. Ravager's idle.
+        return [os.path.join(cfg["root"], anim, "{0}_{1}.png".format(anim, direction))]
     return [os.path.join(cfg["root"], anim, direction,
                          "{0}_{1}_{2:02d}.png".format(anim, direction, i + 1))
             for i in range(count)]
@@ -151,7 +177,7 @@ def check_character(name, cfg):
 
     paths = []
     for anim, count in cfg["animations"]:
-        for direction in (["Down"] if anim == "Death" else DIRECTIONS):
+        for direction in dirs_for(cfg, anim):
             paths.extend(sequence(cfg, anim, direction, count))
 
     missing = [p for p in paths if not os.path.isfile(p)]
@@ -164,7 +190,7 @@ def check_character(name, cfg):
     stats = {p: analyse(p, cfg) for p in paths}
     expected_size = {}
     for anim, count in cfg["animations"]:
-        for direction in (["Down"] if anim == "Death" else DIRECTIONS):
+        for direction in dirs_for(cfg, anim):
             for path in sequence(cfg, anim, direction, count):
                 expected_size[path] = canvas_for(cfg, anim)
     total = len(stats)
@@ -204,7 +230,7 @@ def check_character(name, cfg):
 
     print("")
     for anim, count in cfg["animations"]:
-        for direction in (["Down"] if anim == "Death" else DIRECTIONS):
+        for direction in dirs_for(cfg, anim):
             seq = sequence(cfg, anim, direction, count)
             if len(seq) < 2:
                 continue
@@ -217,13 +243,13 @@ def check_character(name, cfg):
             detail = "anchor {0:.1f}  centre {1:.1f}".format(sb, sc)
             if anim == "Death":
                 ok("{0} spread  {1}  (collapse expected)".format(label, detail))
-            elif anim == "Walk":
+            elif anim in cfg.get("holdstill", ()):
                 if sb > ANCHOR_TOLERANCE or sc > CENTRE_TOLERANCE:
                     warn("{0} spread  {1}".format(label, detail))
                 else:
                     ok("{0} spread  {1}".format(label, detail))
             else:
-                ok("{0} spread  {1}  (lunge expected)".format(label, detail))
+                ok("{0} spread  {1}  (motion expected)".format(label, detail))
 
             if anim == "Death":
                 continue
@@ -237,7 +263,7 @@ def check_character(name, cfg):
     print("")
     for anim, count in cfg["animations"]:
         heights = []
-        for direction in (["Down"] if anim == "Death" else DIRECTIONS):
+        for direction in dirs_for(cfg, anim):
             heights.extend(stats[p]["height"] for p in sequence(cfg, anim, direction, count))
         ok("{0:<7s} body height {1}..{2} px (mean {3:.0f})"
            .format(anim, min(heights), max(heights), sum(heights) / float(len(heights))))

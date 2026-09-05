@@ -26,6 +26,22 @@ Every frame of every character — idle, walk and attack alike — uses the same
 size. The character does **not** need to fill the frame; consistent *alignment*
 matters far more than coverage.
 
+### Per-character canvas exceptions
+
+Width is 192 for everyone. Height grows only where a measured animation does not
+fit, and when it does the extra pixels are added so the pivot **stays put** — a
+character whose feet moved between animations would visibly hop.
+
+| Character | Animations | Canvas | Pivot | Why |
+|---|---|---|---|---|
+| Ravager, Swarm Node | idle, walk, attack | 192 × 192 | (96, 179) | baseline |
+| Ravager, Swarm Node | death | 192 × 208 | (96, 179) | a corpse settles **below** the line its feet stood on — Ravager's axe drops flat and reaches 17 px under the standing feet row, against the 12 px a 192-tall canvas leaves. The 16 px is added to the BOTTOM only. |
+| **King** | all five states | **192 × 232** | **(96, 208)** | his power cast throws a starburst **195 px above** his feet, and his death collapse reaches 15 px below. One canvas is used for every King state so the sprite never changes size mid-fight. |
+
+The King's frames are the tallest in the project and use the most headroom of
+anyone; he still only needs 47 px either side of the pivot, so the shared 192
+width is mostly margin for him.
+
 ### Why 192 × 192
 
 > **Changed from 128 × 128 on 2026-09-05, when the walk and attack art arrived.**
@@ -202,6 +218,25 @@ review aid only; the engine imports the individual frames.
 | Walk | Down, Up, Left, Right | 8 | **32** |
 | Attack | Down, Up, Left, Right | 8 | **32** |
 | | | | **68** |
+
+### The King is the exception: no directions at all
+
+The King is a **fixed objective**. He never walks, never turns to face anything
+and is never possessed, so none of his animations are directional — each is a
+single sequence, stored flat in `Frames/<State>/<State>_NN.png` with no
+direction subfolder.
+
+| State | Directions | Frames | FPS | Loops |
+|---|---|---|---|---|
+| Idle | — | 8 | 8 | yes |
+| Alert | — | 8 | 10 | yes |
+| PowerCast | — | 8 | 12 | no, one shot |
+| Death | — | 8 | 9 | no, holds last frame |
+| | | **32** | | |
+
+There is **no Walk state for the King, and there never will be.** There is also
+no Hit sheet: none was supplied, so `HitFlipbook` is left empty and
+`APTKKingCharacter` falls back to the Alert reaction rather than inventing art.
 
 > **The 4-frame walk plan is obsolete.** It was superseded on 2026-09-05. Any tooling
 > or document still referring to 4 walk frames per direction is stale.
