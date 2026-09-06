@@ -46,12 +46,12 @@ import unreal
 # body scale: the raised attack axe needs 152 px above the feet and the walk
 # axe 71 px to the side. Ravager is drawn at exactly the same size as before,
 # with more transparent padding around him. See Docs/SPRITE_SPEC.md.
-FRAME_WIDTH = 192
-FRAME_HEIGHT = 192
+FRAME_WIDTH = 224
+FRAME_HEIGHT = 224
 
 # Feet anchor, in texture pixels from the top-left of the frame.
-PIVOT_X = 96.0
-PIVOT_Y = 179.0
+PIVOT_X = 112.0
+PIVOT_Y = 200.0
 
 # 1 source pixel == 1 Unreal unit, everywhere, for everything.
 PIXELS_PER_UNREAL_UNIT = 1.0

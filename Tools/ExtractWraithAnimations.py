@@ -135,13 +135,24 @@ IMPACT_CELLS = (5, 6, 7)     # 0-based -> source cells 6, 7, 8
 # 192x192, pivot (96, 179) - the project's standard canvas, shared with
 # Ravager, Swarm Node and Aegis. main() re-measures this every run and refuses
 # to write if Wraith ever stops fitting it.
-CANVAS = (192, 192)
-PIVOT = (96, 179)
+# 224x224 with the pivot at (112, 200), shared by every guard.
+#
+# It used to be 192x192 at (96, 179), which left Ravager 9 px of clearance at
+# his sides and 4 px under his boots, and Sentinel 6 px over his crown. Nothing
+# was actually clipped, but a body that nearly fills its box has no room for a
+# taller pose or a wider swing, and it reads on screen as a character whose head
+# has been shaved off. The box is now big enough that the worst frame of the
+# worst guard still has ~20 px of air around it.
+#
+# This is MARGIN, not scale: the character is drawn at exactly the same size and
+# his feet still land on the pivot. Only the transparent border grows.
+CANVAS = (224, 224)
+PIVOT = (112, 200)
 
 # Hood-to-feet in the finished frames. Ravager stands 116 and Aegis 122; Wraith
 # is given 112 because he is the light, quick one and should read as the
 # smaller figure on a field that already has a bruiser and a tank.
-TARGET_BODY_HEIGHT = 112.0
+TARGET_BODY_HEIGHT = 116.0
 
 # The arrow canvas is square with a true centre pixel, which is what makes the
 # four directions exact 90-degree rotations of one another - a lossless index
@@ -297,7 +308,11 @@ def body_metrics(cell, reference_height):
     if not solid or not heads:
         return None
     feet = solid[-1]
-    top = heads[0]
+    # The hood/helm cap, not the topmost opaque row: a weapon raised over the
+    # head is not part of how tall the character is, and counting it made the
+    # frame measure taller than the body and scale down to compensate.
+    cap = ptk_sheet.head_cap(cell, SRC_ALPHA_THRESHOLD, is_energy)
+    top = cap[0] if cap else heads[0]
 
     span = reference_height if reference_height else (feet - top)
     y0 = max(0, int(feet - span * 0.55))

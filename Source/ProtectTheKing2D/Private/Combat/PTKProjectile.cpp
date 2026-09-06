@@ -84,9 +84,14 @@ void APTKProjectile::Launch(const FVector& InDirection, EPTKFacingDirection InFa
 		UpVector = FVector(0.0f, 0.0f, 1.0f);
 	}
 
+	// Perpendicular part only - see VisualOffset. This is what keeps what the
+	// sweep tests and what the player sees on the same line.
+	VisualOffset = UpVector * VisualHeightOffset;
+	VisualOffset -= Direction * FVector::DotProduct(VisualOffset, Direction);
+
 	if (Sprite)
 	{
-		Sprite->SetWorldLocation(GetActorLocation() + UpVector * VisualHeightOffset);
+		Sprite->SetWorldLocation(GetActorLocation() + VisualOffset);
 		if (UPaperFlipbook* const Flight = FlightFlipbooks.GetForDirection(InFacing))
 		{
 			Sprite->SetFlipbook(Flight);
@@ -102,7 +107,7 @@ void APTKProjectile::Launch(const FVector& InDirection, EPTKFacingDirection InFa
 	}
 
 	UE_LOG(LogPTK, Log,
-		TEXT("ARROW FIRED | %s | from: %s | dir: %s (%s) | damage: %.1f | speed: %.0f | range: %.0f"),
+		TEXT("PROJECTILE FIRED | %s | from: %s | dir: %s (%s) | damage: %.1f | speed: %.0f | range: %.0f"),
 		*GetName(), SourceActor ? *SourceActor->GetName() : TEXT("none"),
 		*UPTKTypesLibrary::DirectionToString(InFacing), *Direction.ToCompactString(),
 		Damage, Speed, MaxRange);
@@ -120,7 +125,7 @@ void APTKProjectile::Tick(float DeltaSeconds)
 	TimeAlive += DeltaSeconds;
 	if (TimeAlive >= MaxLifetime)
 	{
-		Expire(false, GetActorLocation());
+		Expire(nullptr, GetActorLocation());
 		return;
 	}
 
@@ -191,7 +196,7 @@ void APTKProjectile::Tick(float DeltaSeconds)
 		// already at zero has still struck it, and must not sail on to hit
 		// somebody behind - that would be a piercing arrow, which is a later
 		// ability and not this one.
-		Expire(true, Hit.ImpactPoint);
+		Expire(Victim, Hit.ImpactPoint);
 		return;
 	}
 
@@ -199,24 +204,49 @@ void APTKProjectile::Tick(float DeltaSeconds)
 	DistanceTravelled += Step;
 	if (Sprite)
 	{
-		Sprite->SetWorldLocation(End + UpVector * VisualHeightOffset);
+		Sprite->SetWorldLocation(End + VisualOffset);
 	}
 
 	if (bReachedRange)
 	{
 		UE_LOG(LogPTK, Log,
-			TEXT("ARROW EXPIRED | %s | reached %.0f uu without hitting anything"),
+			TEXT("PROJECTILE EXPIRED | %s | reached %.0f uu without hitting anything"),
 			*GetName(), MaxRange);
-		Expire(false, End);
+		Expire(nullptr, End);
 	}
 }
 
-int32 APTKProjectile::ApplySplash(const FVector& AtLocation)
+int32 APTKProjectile::ApplySplash(const FVector& AtLocation, AActor* DirectVictim)
 {
 	UWorld* const World = GetWorld();
 	if (!World || Damage <= 0.0f)
 	{
 		return 0;
+	}
+
+	// Strictly single target. Damaging only what was struck is not the same as
+	// overlapping a tiny sphere: an 18-unit enemy capsule pressed against
+	// another would be caught by any radius at all, so a spell that is supposed
+	// to hit one body has to skip the query entirely.
+	if (SplashRadius <= 0.0f)
+	{
+		if (!PTKCombat::IsEngageable(DirectVictim))
+		{
+			return 0;
+		}
+		float Direct = 0.0f;
+		if (UPTKHealthComponent* const Health = PTKCombat::GetHealth(DirectVictim))
+		{
+			Direct = Health->ApplyDamage(Damage, SourceActor ? SourceActor : this);
+		}
+		UE_LOG(LogPTK, Log,
+			TEXT("PROJECTILE HIT | %s -> %s | damage: %.1f | travelled: %.0f of %.0f | single target"),
+			*GetName(), *DirectVictim->GetName(), Direct, DistanceTravelled, MaxRange);
+		if (Direct > 0.0f)
+		{
+			OnProjectileHit(DirectVictim, Direct);
+		}
+		return 1;
 	}
 
 	// A radius of zero still has to damage what the arrow physically struck, so
@@ -273,9 +303,15 @@ int32 APTKProjectile::ApplySplash(const FVector& AtLocation)
 		}
 		++Count;
 
+		// The distance is logged so the blast radius can be checked rather than
+		// trusted: every victim must be inside it, and anything further away
+		// must be absent from this list entirely.
 		UE_LOG(LogPTK, Log,
-			TEXT("ARROW HIT | %s -> %s | damage: %.1f | travelled: %.0f of %.0f"),
-			*GetName(), *Victim->GetName(), Dealt, DistanceTravelled, MaxRange);
+			TEXT("PROJECTILE HIT | %s -> %s | damage: %.1f | dist: %.0f of %.0f | ")
+			TEXT("travelled: %.0f of %.0f"),
+			*GetName(), *Victim->GetName(), Dealt,
+			FVector::Dist(AtLocation, Victim->GetActorLocation()), Radius,
+			DistanceTravelled, MaxRange);
 
 		if (Dealt > 0.0f)
 		{
@@ -283,12 +319,12 @@ int32 APTKProjectile::ApplySplash(const FVector& AtLocation)
 		}
 	}
 
-	UE_LOG(LogPTK, Log, TEXT("ARROW BURST | %s | %d enemies caught within %.0f uu"),
+	UE_LOG(LogPTK, Log, TEXT("PROJECTILE BURST | %s | %d enemies caught within %.0f uu"),
 		*GetName(), Count, Radius);
 	return Count;
 }
 
-void APTKProjectile::Expire(bool bDetonated, const FVector& AtLocation)
+void APTKProjectile::Expire(AActor* DirectVictim, const FVector& AtLocation)
 {
 	if (bSpent)
 	{
@@ -297,16 +333,17 @@ void APTKProjectile::Expire(bool bDetonated, const FVector& AtLocation)
 	bSpent = true;
 	SetActorLocation(AtLocation, false);
 
-	if (bDetonated)
+	if (DirectVictim)
 	{
-		ApplySplash(AtLocation);
+		ApplySplash(AtLocation, DirectVictim);
 	}
 
 	if (Sprite)
 	{
-		// The burst is drawn where the arrow actually landed, not lifted: it
-		// marks the point on the combat row that was struck.
-		Sprite->SetWorldLocation(AtLocation);
+		// Drawn where the arrow VISUALLY was, which is the same line it was
+		// swept along - the burst must not drop to the feet after a shot the
+		// player watched cross at bow height.
+		Sprite->SetWorldLocation(AtLocation + VisualOffset);
 	}
 
 	if (Sprite && ImpactFlipbook)
@@ -315,6 +352,10 @@ void APTKProjectile::Expire(bool bDetonated, const FVector& AtLocation)
 		Sprite->SetLooping(false);
 		Sprite->PlayFromStart();
 		SetLifeSpan(FMath::Max(ImpactLifetime, 0.01f));
+		UE_LOG(LogPTK, Log,
+			TEXT("PROJECTILE IMPACT | %s | burst '%s' playing for %.2fs at %s"),
+			*GetName(), *ImpactFlipbook->GetName(), ImpactLifetime,
+			*AtLocation.ToCompactString());
 		return;
 	}
 

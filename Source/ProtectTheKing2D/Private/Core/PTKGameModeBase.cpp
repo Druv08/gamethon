@@ -3,6 +3,7 @@
 #include "Core/PTKGameModeBase.h"
 
 #include "Core/PTKCombatHUD.h"
+#include "Core/PTKPlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "ProtectTheKing2D.h"
 #include "UObject/ConstructorHelpers.h"
@@ -16,8 +17,14 @@ APTKGameModeBase::APTKGameModeBase()
 	// interface later.
 	HUDClass = APTKCombatHUD::StaticClass();
 
-	// Ravager is the Phase 1 test subject. Once the other guards exist this
-	// becomes a selection driven by the guard-switching system instead.
+	// Guard switching lives on the controller, not on the pawn, so that the
+	// number keys survive the pawn being swapped out from under them. See
+	// APTKPlayerController.
+	PlayerControllerClass = APTKPlayerController::StaticClass();
+
+	// Ravager is slot 1, and the guard the player starts on. The other four are
+	// placed in the level and are AI-driven until a number key says otherwise;
+	// this is only the starting point, not the only guard the player gets.
 	static ConstructorHelpers::FClassFinder<APawn> RavagerBP(
 		TEXT("/Game/PTK/Characters/Guards/Ravager/Blueprints/BP_Ravager"));
 

@@ -176,6 +176,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
 	FVector GetFacingWorldDirection() const;
 
+	/**
+	 * The camera-derived screen basis, exposed so an AI controller can steer in
+	 * the same space the player's input arrives in.
+	 *
+	 * Without these a controller would have to hardcode "screen right is -X",
+	 * which is the one assumption this project keeps proving wrong.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Movement")
+	FVector GetMovementRightVector() const { return MovementRightVector; }
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Movement")
+	FVector GetMovementUpVector() const { return MovementUpVector; }
+
 	/** Centre of the melee test for the current facing, in world space. */
 	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
 	FVector GetAttackHitCentre() const;

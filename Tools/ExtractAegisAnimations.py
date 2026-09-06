@@ -121,14 +121,25 @@ DEFEND_SHEETS = [
 # despite being the bulkier man - his weight is in width, not height. main()
 # re-checks this every run and refuses to write if it ever stops being true,
 # and extract_defend() fails outright if a braced shield touches the edge.
-CANVAS = (192, 192)
-PIVOT = (96, 179)
+# 224x224 with the pivot at (112, 200), shared by every guard.
+#
+# It used to be 192x192 at (96, 179), which left Ravager 9 px of clearance at
+# his sides and 4 px under his boots, and Sentinel 6 px over his crown. Nothing
+# was actually clipped, but a body that nearly fills its box has no room for a
+# taller pose or a wider swing, and it reads on screen as a character whose head
+# has been shaved off. The box is now big enough that the worst frame of the
+# worst guard still has ~20 px of air around it.
+#
+# This is MARGIN, not scale: the character is drawn at exactly the same size and
+# his feet still land on the pivot. Only the transparent border grows.
+CANVAS = (224, 224)
+PIVOT = (112, 200)
 
 # Helmet-to-feet in the finished frames. Ravager stands 116; Aegis is given 122
 # because he is the heavy tank and should read as the bigger man on the field.
 # He is far bulkier than Ravager at the same height, which is where the weight
 # actually comes from - height alone would just look stretched.
-TARGET_BODY_HEIGHT = 122.0
+TARGET_BODY_HEIGHT = 116.0
 
 SRC_ALPHA_THRESHOLD = 128
 OUT_ALPHA_THRESHOLD = 128
@@ -244,7 +255,11 @@ def body_metrics(cell, reference_height):
     if not solid or not heads:
         return None
     feet = solid[-1]
-    top = heads[0]
+    # The hood/helm cap, not the topmost opaque row: a weapon raised over the
+    # head is not part of how tall the character is, and counting it made the
+    # frame measure taller than the body and scale down to compensate.
+    cap = ptk_sheet.head_cap(cell, SRC_ALPHA_THRESHOLD, is_energy)
+    top = cap[0] if cap else heads[0]
 
     span = reference_height if reference_height else (feet - top)
     y0 = max(0, int(feet - span * 0.55))

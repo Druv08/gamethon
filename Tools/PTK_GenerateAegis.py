@@ -41,10 +41,10 @@ import unreal
 # ---------------------------------------------------------------------------
 # Contract - matches Tools/ExtractAegisAnimations.py and Docs/SPRITE_SPEC.md
 # ---------------------------------------------------------------------------
-FRAME_WIDTH = 192
-FRAME_HEIGHT = 192
-PIVOT_X = 96.0
-PIVOT_Y = 179.0
+FRAME_WIDTH = 224
+FRAME_HEIGHT = 224
+PIVOT_X = 112.0
+PIVOT_Y = 200.0
 PIXELS_PER_UNREAL_UNIT = 1.0
 
 IDLE_FPS = 8.0

@@ -116,6 +116,29 @@ enum class EPTKEnemyState : uint8
 };
 
 /**
+ * A guard AI's decision state.
+ *
+ * Deliberately the same shape as EPTKEnemyState - hold, close, strike, recover -
+ * with one addition the enemies do not need: Return. An enemy chases whatever it
+ * picked until one of them dies, but a guard defends a POST, so it has to have a
+ * state that means "disengage and go back".
+ *
+ * Inactive is what a guard is while the player is driving it. It is a state
+ * rather than a separate flag so that "who is in charge" is answerable from one
+ * value.
+ */
+UENUM(BlueprintType)
+enum class EPTKGuardAIState : uint8
+{
+	Inactive	UMETA(DisplayName = "Inactive (player controlled)"),
+	Hold		UMETA(DisplayName = "Hold"),
+	Engage		UMETA(DisplayName = "Engage"),
+	Attack		UMETA(DisplayName = "Attack"),
+	Return		UMETA(DisplayName = "Return Home"),
+	Dead		UMETA(DisplayName = "Dead")
+};
+
+/**
  * One flipbook per cardinal direction.
  *
  * A character supplies one of these per animation state (Idle, Walk, ...).
@@ -189,6 +212,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "PTK|Direction")
 	static FString EnemyStateToString(EPTKEnemyState State);
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Direction")
+	static FString GuardAIStateToString(EPTKGuardAIState State);
 
 	UFUNCTION(BlueprintPure, Category = "PTK|Direction")
 	static FString KingStateToString(EPTKKingState State);

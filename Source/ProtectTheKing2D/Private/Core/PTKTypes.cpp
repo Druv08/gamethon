@@ -134,3 +134,17 @@ FString UPTKTypesLibrary::KingStateToString(EPTKKingState State)
 	default:                       return TEXT("Idle");
 	}
 }
+
+FString UPTKTypesLibrary::GuardAIStateToString(EPTKGuardAIState State)
+{
+	switch (State)
+	{
+	case EPTKGuardAIState::Hold:   return TEXT("Hold");
+	case EPTKGuardAIState::Engage: return TEXT("Engage");
+	case EPTKGuardAIState::Attack: return TEXT("Attack");
+	case EPTKGuardAIState::Return: return TEXT("Return");
+	case EPTKGuardAIState::Dead:   return TEXT("Dead");
+	case EPTKGuardAIState::Inactive:
+	default:                       return TEXT("Player");
+	}
+}

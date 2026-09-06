@@ -75,6 +75,7 @@ from collections import deque
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ptk_png
+import ptk_sheet
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +129,19 @@ SHEETS = [
 # same feet anchor, with more transparent padding around him. Paper2D stores a
 # pivot per sprite, so the extra padding costs nothing at runtime beyond
 # texture memory.
-CANVAS = (192, 192)
-PIVOT = (96, 179)
+# 224x224 with the pivot at (112, 200), shared by every guard.
+#
+# It used to be 192x192 at (96, 179), which left Ravager 9 px of clearance at
+# his sides and 4 px under his boots, and Sentinel 6 px over his crown. Nothing
+# was actually clipped, but a body that nearly fills its box has no room for a
+# taller pose or a wider swing, and it reads on screen as a character whose head
+# has been shaved off. The box is now big enough that the worst frame of the
+# worst guard still has ~20 px of air around it.
+#
+# This is MARGIN, not scale: the character is drawn at exactly the same size and
+# his feet still land on the pivot. Only the transparent border grows.
+CANVAS = (224, 224)
+PIVOT = (112, 200)
 
 # Ravager's helmet-to-feet height in the finished frames. Measured off the four
 # existing idle sprites, which are the scale reference for the whole character.
@@ -181,7 +193,7 @@ def build_masks(img):
     return core, full, w, h
 
 
-def body_metrics(core, w, h, reference_height):
+def body_metrics(core, w, h, reference_height, cell=None):
     """
     feet  : lowest armour row carrying real width (not a stray glow pixel)
     top   : highest armour row carrying real width
@@ -201,7 +213,13 @@ def body_metrics(core, w, h, reference_height):
         return None
     feet = solid[-1]
     heads = [y for y in range(h) if rows[y] >= head_threshold]
-    top = heads[0]
+    # The helmet crest, not the topmost armour row. His axe rides above the
+    # helmet in most of the walk cycle, and counting it as "the top of Ravager"
+    # made every finished frame measure taller than the man - so the scale that
+    # matched 116 px was matching axe-to-feet and drew him about a twentieth
+    # short of the guards whose height is measured off a hood.
+    cap = ptk_sheet.head_cap(cell, SRC_ALPHA_THRESHOLD, is_energy) if cell else None
+    top = cap[0] if cap else heads[0]
 
     span = reference_height if reference_height else (feet - top)
     y0 = max(0, int(feet - span * 0.55))
@@ -469,7 +487,7 @@ def plan_sheet(spec, cells, cell_w):
             line = []
             for c in range(COLUMNS):
                 core, _full, w, h = masks[r][c]
-                line.append(body_metrics(core, w, h, reference))
+                line.append(body_metrics(core, w, h, reference, cells[r][c]))
             out.append(line)
         return out
 
@@ -596,23 +614,27 @@ LEGACY_IDLE_PIVOT = (64, 119)
 
 def recanvas_idle():
     """
-    Re-frames the four existing idle sprites onto the shared canvas.
+    Re-frames the four existing idle sprites onto the shared canvas, at the
+    same body height as everything else Ravager does.
 
-    This is a pure copy: not one pixel of Ravager is resampled, recoloured or
-    moved relative to his feet. Only the transparent margin around him changes,
-    so that idle, walk and attack all agree on one frame size and one pivot.
-    The 128x128 originals stay where they are as the scale reference.
+    It used to be a pure paste, on the reasoning that the 128x128 originals
+    WERE the scale reference. They no longer are: the walk and attack sheets
+    are normalised to TARGET_BODY_HEIGHT measured from the helmet crest, and
+    the untouched idle came out about a twentieth shorter than the stride it
+    drops into - so Ravager shrank the moment he stopped walking.
+
+    Scaling here is the same backward-mapped resample the other sheets use, and
+    it is uniform, so his proportions are untouched. His feet still land on the
+    pivot.
     """
     out_dir = os.path.join(FRAMES_DIR, "Idle")
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
 
-    dx = PIVOT[0] - LEGACY_IDLE_PIVOT[0]
-    dy = PIVOT[1] - LEGACY_IDLE_PIVOT[1]
     log("")
     log("=" * 74)
-    log("Idle  <-  existing 128x128 art, re-framed onto {0}x{1} at +({2},{3})"
-        .format(CANVAS[0], CANVAS[1], dx, dy))
+    log("Idle  <-  existing 128x128 art, normalised to {0:.0f} px and re-framed "
+        "onto {1}x{2}".format(TARGET_BODY_HEIGHT, CANVAS[0], CANVAS[1]))
 
     for direction in DIRECTIONS:
         src = os.path.join(FRAMES_DIR, "Idle_{0}.png".format(direction))
@@ -622,11 +644,25 @@ def recanvas_idle():
         if (small.width, small.height) != LEGACY_IDLE_CANVAS:
             fail("{0} is {1}x{2}, expected {3}x{4}".format(
                 src, small.width, small.height, *LEGACY_IDLE_CANVAS))
-        frame = ptk_png.Image(CANVAS[0], CANVAS[1])
-        frame.paste(small, dx, dy)
+
+        core, _full, w, h = build_masks(small)
+        m = body_metrics(core, w, h, None, small)
+        if m is None:
+            fail("idle {0} is empty".format(direction))
+        scale = TARGET_BODY_HEIGHT / float(m["body"])
+
+        frame = ptk_sheet.render_frame(
+            small, 0, 0, w, h, m["cx"], m["feet"], scale, CANVAS, PIVOT)
+        ptk_sheet.harden_alpha(frame, OUT_ALPHA_THRESHOLD)
+        clipped = ptk_sheet.border_contact(frame)
+        if clipped:
+            fail("Idle_{0} is clipped by the canvas ({1} px on the edge)".format(
+                direction, clipped))
+
         name = "Idle_{0}.png".format(direction)
         ptk_png.write_png(os.path.join(out_dir, name), frame)
-        log("    {0}".format(name))
+        log("    {0}  body {1} px -> x{2:.4f}  ({3} px finished)".format(
+            name, m["body"], scale, int(round(m["body"] * scale))))
 
 
 def main():

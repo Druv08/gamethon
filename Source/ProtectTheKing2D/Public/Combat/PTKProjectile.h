@@ -130,17 +130,17 @@ protected:
 	 * is exactly one place that can damage anything, and the once-per-enemy
 	 * rule is a property of that one place rather than of two paths agreeing.
 	 */
-	int32 ApplySplash(const FVector& AtLocation);
+	int32 ApplySplash(const FVector& AtLocation, AActor* DirectVictim);
 
 	/**
 	 * Stops the flight, plays the impact flipbook and schedules destruction.
 	 *
-	 * `bDetonated` is false when the arrow simply ran out of range, which is
-	 * why the two endings share one function - an expiring arrow must clean
-	 * itself up exactly as thoroughly as one that hit, but must not deal
-	 * damage on the way out.
+	 * `DirectVictim` is null when the projectile simply ran out of range, which
+	 * is why the two endings share one function - an expiring shot must clean
+	 * itself up exactly as thoroughly as one that hit, but must not deal damage
+	 * on the way out.
 	 */
-	void Expire(bool bDetonated, const FVector& AtLocation);
+	void Expire(AActor* DirectVictim, const FVector& AtLocation);
 
 	/** Query sphere. Also the root - the sprite hangs off it. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "PTK|Components")
@@ -201,11 +201,17 @@ protected:
 	float CollisionRadius = 12.0f;
 
 	/**
-	 * Blast radius around the point of impact, in world units. 0 = single target.
+	 * Blast radius around the point of impact, in world units.
 	 *
-	 * Everything hostile inside it takes the full damage, once - the same rule
-	 * a guard's melee arc already uses, rather than a falloff curve that would
-	 * make the number on screen disagree with the number in the design.
+	 * Above zero, everything hostile inside takes the full damage once - the
+	 * same rule a guard's melee arc already uses, rather than a falloff curve
+	 * that would make the number on screen disagree with the number in design.
+	 *
+	 * EXACTLY ZERO means strictly single target: only the body the projectile
+	 * physically struck is damaged, and a second enemy standing against it is
+	 * not. That is not the same as a very small radius - a sphere even a few
+	 * units wide still reaches a neighbouring capsule - which is why zero is
+	 * handled as its own case rather than as a small number.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Projectile", meta = (ClampMin = "0.0"))
 	float SplashRadius = 96.0f;
@@ -241,6 +247,19 @@ protected:
 	/** Screen-up in world space, from the shooter. Only lifts the sprite. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Projectile")
 	FVector UpVector = FVector(0.0f, 0.0f, 1.0f);
+
+	/**
+	 * The lift actually applied to the sprite: VisualHeightOffset along
+	 * UpVector with any component ALONG the flight line removed.
+	 *
+	 * Screen-up is the direction an Up or Down shot travels. Lifting the sprite
+	 * along it therefore slides the visible projectile ahead of - or behind -
+	 * the collision it stands for, which is precisely "the arrow passes through
+	 * an enemy and nothing happens". Keeping only the perpendicular part leaves
+	 * a Left/Right shot riding at bow height, where the lift costs nothing, and
+	 * draws an Up/Down shot exactly on the line it is swept along.
+	 */
+	FVector VisualOffset = FVector::ZeroVector;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Projectile")
 	EPTKTeam OwningTeam = EPTKTeam::Guards;

@@ -135,6 +135,16 @@ public:
 	void PTKGuardKill(float Delay = 0.0f);
 
 	/**
+	 * Fells EVERY guard on the field, player-driven and AI alike.
+	 *
+	 * PTKGuardKill only reaches the pawn the player holds, which cannot test
+	 * what happens when the whole line falls - the case the King fallback
+	 * exists for.
+	 */
+	UFUNCTION(Exec)
+	void PTKKillGuards(float Delay = 0.0f);
+
+	/**
 	 * Screenshot after Delay seconds, named king_<Name>.png.
 	 *
 	 * -ExecCmds all fire the instant the map loads, which is before the
@@ -143,6 +153,74 @@ public:
 	 */
 	UFUNCTION(Exec)
 	void PTKShot(float Delay = 0.0f, const FString& Name = TEXT("shot"));
+
+	/**
+	 * Presses the guard-select number key for a slot, Delay seconds from now.
+	 *
+	 * Deliberately injects the KEY rather than calling SelectGuardSlot, so a
+	 * scripted run exercises the whole chain a player's finger does:
+	 * IMC_PTK_GuardSwitch -> IA_SelectGuardN -> the controller's binding. A
+	 * test that called the function directly would still pass with the mapping
+	 * context missing, which is exactly the fault worth catching.
+	 */
+	UFUNCTION(Exec)
+	void PTKSwitchKey(int32 Slot = 1, float Delay = 0.0f);
+
+	/** Switches by calling the controller directly. Bypasses input - see above. */
+	UFUNCTION(Exec)
+	void PTKSwitchGuard(int32 Slot = 1, float Delay = 0.0f);
+
+	/** Logs slot / health / driver / controller for all five guards. */
+	UFUNCTION(Exec)
+	void PTKGuards(float Delay = 0.0f);
+
+	/** Kills one guard by slot, so the dead-guard rules can be tested. */
+	UFUNCTION(Exec)
+	void PTKKillSlot(int32 Slot = 1, float Delay = 0.0f);
+
+	/**
+	 * Holds a real keyboard key down for Hold seconds, Delay seconds from now.
+	 *
+	 * The same injection path as PTKSwitchKey, for the keys that are NOT part of
+	 * switching: W to prove a newly possessed guard still steers, SpaceBar to
+	 * prove it still swings, LeftShift to prove Aegis still braces. Calling
+	 * SetMoveInput or StartAttack directly would prove none of those, because
+	 * the AI uses those same entry points - only a key press proves the pawn's
+	 * own Enhanced Input bindings came back with the possession.
+	 */
+	UFUNCTION(Exec)
+	void PTKPressKey(const FString& KeyName = TEXT("W"), float Hold = 1.0f, float Delay = 0.0f);
+
+	/**
+	 * Aim rig: four stationary dummies exactly Up / Down / Left / Right of the
+	 * played guard, then one shot in each direction.
+	 *
+	 * The field is cleared first and the dummies have their AI tick disabled,
+	 * so nothing wanders into the line and nothing else can absorb a shot. A
+	 * projectile that misses here missed because the collision line and the
+	 * visible line disagree, which is the only thing this is measuring.
+	 */
+	UFUNCTION(Exec)
+	void PTKAimTest(float Distance = 200.0f, float StartDelay = 2.0f);
+
+	/**
+	 * Splash rig: a tight cluster of dummies ahead of the played guard plus one
+	 * far outside the blast, then a single shot into it.
+	 */
+	UFUNCTION(Exec)
+	void PTKSplashTest(float Distance = 200.0f, float StartDelay = 2.0f);
+
+protected:
+	/** Clears the field and returns the played guard, or null. */
+	APTKTopDownCharacter* ClearFieldForRig();
+
+	/** One stationary dummy at a world location. */
+	AActor* SpawnDummy(const FVector& Where, const FString& Label);
+
+	/** Logs every dummy's remaining health under a heading. */
+	void LogDummies(const FString& Stage);
+
+public:
 
 protected:
 	/** Draws a labelled bar with a border. Fraction is clamped to 0..1. */

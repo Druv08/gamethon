@@ -7,9 +7,13 @@
 #include "Characters/PTKKingCharacter.h"
 #include "Characters/PTKTopDownCharacter.h"
 #include "Components/PTKHealthComponent.h"
+#include "AI/PTKGuardAIController.h"
+#include "Core/PTKPlayerController.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
+#include "InputCoreTypes.h"
+#include "InputKeyEventArgs.h"
 #include "Kismet/GameplayStatics.h"
 #include "ProtectTheKing2D.h"
 
@@ -338,6 +342,47 @@ void APTKCombatHUD::PTKPlayGuard(const FString& GuardName)
 	}
 
 	UE_LOG(LogPTK, Warning, TEXT("PTKPlayGuard: now playing %s"), *Guard->GetName());
+}
+
+void APTKCombatHUD::PTKKillGuards(float Delay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			UWorld* const W = GetWorld();
+			if (!W)
+			{
+				return;
+			}
+			int32 Felled = 0;
+			for (TActorIterator<APTKGuardCharacter> It(W); It; ++It)
+			{
+				APTKGuardCharacter* const Guard = *It;
+				if (!Guard || Guard->IsDead())
+				{
+					continue;
+				}
+				if (UPTKHealthComponent* const Health = Guard->GetHealthComponent())
+				{
+					UE_LOG(LogPTK, Warning,
+						TEXT("*** DEBUG KILL (console command, NOT gameplay) *** ")
+						TEXT("felling %s from %.0f HP"), *Guard->GetName(),
+						Health->GetCurrentHealth());
+					Health->ApplyDamage(Health->GetCurrentHealth(), Guard);
+					++Felled;
+				}
+			}
+			UE_LOG(LogPTK, Warning, TEXT("PTKKillGuards: felled %d guard(s)"), Felled);
+		}), FMath::Max(Delay, 0.01f), false);
+
+	UE_LOG(LogPTK, Warning, TEXT("PTKKillGuards: scheduled at +%.1fs"), Delay);
 }
 
 void APTKCombatHUD::PTKGuardDefend(int32 Count, float Interval, float StartDelay)
@@ -691,4 +736,427 @@ void APTKCombatHUD::DrawHUD()
 	{
 		DrawKingDefeatBanner();
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Guard switching - console entry points
+// ---------------------------------------------------------------------------
+namespace PTKSwitchKeys
+{
+	/** Slot 1..5 -> the number key a player would press. */
+	static FKey ForSlot(int32 Slot)
+	{
+		switch (Slot)
+		{
+		case 1: return EKeys::One;
+		case 2: return EKeys::Two;
+		case 3: return EKeys::Three;
+		case 4: return EKeys::Four;
+		case 5: return EKeys::Five;
+		default: return EKeys::Invalid;
+		}
+	}
+}
+
+void APTKCombatHUD::PTKSwitchKey(int32 Slot, float Delay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FKey Key = PTKSwitchKeys::ForSlot(Slot);
+	if (!Key.IsValid())
+	{
+		UE_LOG(LogPTK, Error, TEXT("PTKSwitchKey: %d is not a guard slot"), Slot);
+		return;
+	}
+
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this, Key, Slot]()
+		{
+			APlayerController* const PC = GetOwningPlayerController();
+			UWorld* const W = GetWorld();
+			if (!PC || !W)
+			{
+				return;
+			}
+
+			UE_LOG(LogPTK, Warning, TEXT("PTKSwitchKey: pressing '%s' for slot %d"),
+				*Key.ToString(), Slot);
+
+			// Straight into the player's own input pipeline, so the mapping
+			// context and the action asset are both on trial here, not just the
+			// C++ behind them.
+			// Device 0 is the default keyboard/mouse. Built by hand rather than
+			// asked of IPlatformInputDeviceMapper, which lives in ApplicationCore
+			// - a whole module dependency for one constant.
+			const FInputDeviceId Device = FInputDeviceId::CreateFromInternalId(0);
+			PC->InputKey(FInputKeyEventArgs(nullptr, Device, Key, IE_Pressed,
+				FPlatformTime::Cycles64()));
+
+			// Released shortly after, or the key stays down for the rest of the
+			// session and the next press of a DIFFERENT number arrives with this
+			// one still held.
+			FTimerHandle Release;
+			W->GetTimerManager().SetTimer(Release,
+				FTimerDelegate::CreateWeakLambda(this, [this, Key, Device]()
+				{
+					if (APlayerController* const P = GetOwningPlayerController())
+					{
+						P->InputKey(FInputKeyEventArgs(nullptr, Device, Key, IE_Released,
+							FPlatformTime::Cycles64()));
+					}
+				}), 0.1f, false);
+		}), FMath::Max(Delay, 0.01f), false);
+}
+
+void APTKCombatHUD::PTKSwitchGuard(int32 Slot, float Delay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this, Slot]()
+		{
+			if (APTKPlayerController* const PC =
+					Cast<APTKPlayerController>(GetOwningPlayerController()))
+			{
+				PC->SelectGuardSlot(Slot);
+			}
+			else
+			{
+				UE_LOG(LogPTK, Error,
+					TEXT("PTKSwitchGuard: the player controller is not an APTKPlayerController"));
+			}
+		}), FMath::Max(Delay, 0.01f), false);
+}
+
+void APTKCombatHUD::PTKGuards(float Delay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (const APTKPlayerController* const PC =
+					Cast<APTKPlayerController>(GetOwningPlayerController()))
+			{
+				PC->LogRoster(TEXT("PTKGuards"));
+			}
+		}), FMath::Max(Delay, 0.01f), false);
+}
+
+void APTKCombatHUD::PTKKillSlot(int32 Slot, float Delay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this, Slot]()
+		{
+			const APTKPlayerController* const PC =
+				Cast<APTKPlayerController>(GetOwningPlayerController());
+			APTKGuardCharacter* const Guard = PC ? PC->GetGuardInSlot(Slot) : nullptr;
+			if (!Guard)
+			{
+				UE_LOG(LogPTK, Error, TEXT("PTKKillSlot: no guard in slot %d"), Slot);
+				return;
+			}
+			if (UPTKHealthComponent* const Health = Guard->GetHealthComponent())
+			{
+				UE_LOG(LogPTK, Warning,
+					TEXT("*** DEBUG KILL (console command, NOT gameplay) *** ")
+					TEXT("felling slot %d %s from %.0f HP"),
+					Slot, *Guard->GetGuardId().ToString(), Health->GetCurrentHealth());
+				// Immunity would otherwise swallow this while Aegis is braced,
+				// and a test that silently fails to kill is worse than no test.
+				Health->SetDamageImmune(false);
+				Health->ApplyDamage(Health->GetCurrentHealth(), Guard);
+			}
+		}), FMath::Max(Delay, 0.01f), false);
+}
+
+void APTKCombatHUD::PTKPressKey(const FString& KeyName, float Hold, float Delay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FKey Key(*KeyName);
+	if (!Key.IsValid())
+	{
+		UE_LOG(LogPTK, Error, TEXT("PTKPressKey: '%s' is not a key"), *KeyName);
+		return;
+	}
+
+	const float HoldFor = FMath::Clamp(Hold, 0.05f, 30.0f);
+
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle,
+		FTimerDelegate::CreateWeakLambda(this, [this, Key, HoldFor]()
+		{
+			APlayerController* const PC = GetOwningPlayerController();
+			UWorld* const W = GetWorld();
+			if (!PC || !W)
+			{
+				return;
+			}
+			const FInputDeviceId Device = FInputDeviceId::CreateFromInternalId(0);
+			UE_LOG(LogPTK, Warning, TEXT("PTKPressKey: holding '%s' for %.1fs on %s"),
+				*Key.ToString(), HoldFor, *GetNameSafe(PC->GetPawn()));
+			PC->InputKey(FInputKeyEventArgs(nullptr, Device, Key, IE_Pressed,
+				FPlatformTime::Cycles64()));
+
+			FTimerHandle Release;
+			W->GetTimerManager().SetTimer(Release,
+				FTimerDelegate::CreateWeakLambda(this, [this, Key, Device]()
+				{
+					if (APlayerController* const P = GetOwningPlayerController())
+					{
+						P->InputKey(FInputKeyEventArgs(nullptr, Device, Key, IE_Released,
+							FPlatformTime::Cycles64()));
+						UE_LOG(LogPTK, Warning, TEXT("PTKPressKey: released '%s'"),
+							*Key.ToString());
+					}
+				}), HoldFor, false);
+		}), FMath::Max(Delay, 0.01f), false);
+}
+
+// ---------------------------------------------------------------------------
+// Aim rigs - stationary dummies on known bearings
+// ---------------------------------------------------------------------------
+namespace PTKAimRig
+{
+	static const TCHAR* const SwarmClass =
+		TEXT("/Game/PTK/Characters/Enemies/SwarmNode/Blueprints/BP_SwarmNode.BP_SwarmNode_C");
+	static const TCHAR* const LabelPrefix = TEXT("AimDummy_");
+}
+
+APTKTopDownCharacter* APTKCombatHUD::ClearFieldForRig()
+{
+	UWorld* const World = GetWorld();
+	APTKTopDownCharacter* const Guard =
+		Cast<APTKTopDownCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!World || !Guard)
+	{
+		UE_LOG(LogPTK, Error, TEXT("AIM RIG | no played guard"));
+		return nullptr;
+	}
+
+	// Everything else goes. A shot that is stopped by a swarm node wandering
+	// across the line proves nothing about aim, and leaving the field populated
+	// is the difference between a measurement and an anecdote.
+	int32 Removed = 0;
+	for (TActorIterator<APTKEnemyCharacter> It(World); It; ++It)
+	{
+		if (IsValid(*It))
+		{
+			It->Destroy();
+			++Removed;
+		}
+	}
+	// The other four stop thinking too. A Sentinel at his post will happily
+	// splash a dummy that was put there to measure Wraith, and the log would
+	// then credit the hit to the wrong bow.
+	int32 Silenced = 0;
+	for (TActorIterator<APTKGuardCharacter> It(World); It; ++It)
+	{
+		if (!IsValid(*It) || *It == Guard)
+		{
+			continue;
+		}
+		if (APTKGuardAIController* const AI = Cast<APTKGuardAIController>(It->GetController()))
+		{
+			AI->SetAIEnabled(false);
+			++Silenced;
+		}
+	}
+	UE_LOG(LogPTK, Warning,
+		TEXT("AIM RIG | field cleared (%d enemies removed, %d guard AI silenced)"),
+		Removed, Silenced);
+	return Guard;
+}
+
+AActor* APTKCombatHUD::SpawnDummy(const FVector& Where, const FString& Label)
+{
+	UWorld* const World = GetWorld();
+	UClass* const Class = LoadClass<APTKEnemyCharacter>(nullptr, PTKAimRig::SwarmClass);
+	if (!World || !Class)
+	{
+		UE_LOG(LogPTK, Error, TEXT("AIM RIG | BP_SwarmNode could not be loaded"));
+		return nullptr;
+	}
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APTKEnemyCharacter* const Dummy =
+		World->SpawnActor<APTKEnemyCharacter>(Class, Where, FRotator::ZeroRotator, Params);
+	if (!Dummy)
+	{
+		return nullptr;
+	}
+
+	// Stationary on purpose: its own Tick is what chases and attacks, so
+	// switching that off leaves a body that can still be hit and still bleeds,
+	// but cannot walk out of the line being measured.
+	Dummy->SetActorTickEnabled(false);
+	Dummy->SetActorLabel(PTKAimRig::LabelPrefix + Label);
+	UE_LOG(LogPTK, Warning, TEXT("AIM RIG | dummy %-6s at %s"),
+		*Label, *Where.ToCompactString());
+	return Dummy;
+}
+
+void APTKCombatHUD::LogDummies(const FString& Stage)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	UE_LOG(LogPTK, Warning, TEXT("AIM RIG | %s"), *Stage);
+	for (TActorIterator<APTKEnemyCharacter> It(World); It; ++It)
+	{
+		APTKEnemyCharacter* const Dummy = *It;
+		if (!IsValid(Dummy) || !Dummy->GetActorLabel().StartsWith(PTKAimRig::LabelPrefix))
+		{
+			continue;
+		}
+		const UPTKHealthComponent* const Health = Dummy->GetHealthComponent();
+		const float Now = Health ? Health->GetCurrentHealth() : -1.0f;
+		const float Max = Health ? Health->GetMaxHealth() : -1.0f;
+		UE_LOG(LogPTK, Warning, TEXT("AIM RIG | %-18s HP %6.1f/%6.1f  %s"),
+			*Dummy->GetActorLabel(), Now, Max,
+			(Now < Max) ? TEXT("HIT") : TEXT("untouched"));
+	}
+}
+
+void APTKCombatHUD::PTKAimTest(float Distance, float StartDelay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FTimerHandle Setup;
+	World->GetTimerManager().SetTimer(Setup,
+		FTimerDelegate::CreateWeakLambda(this, [this, Distance]()
+		{
+			APTKTopDownCharacter* const Guard = ClearFieldForRig();
+			UWorld* const W = GetWorld();
+			if (!Guard || !W)
+			{
+				return;
+			}
+
+			// Bearings come from the guard's OWN screen basis, so "Up" here is
+			// the same Up the flipbook and the shot use. Building them from
+			// world axes would be testing my arithmetic, not the game's.
+			const FVector Here = Guard->GetActorLocation();
+			const FVector R = Guard->GetMovementRightVector();
+			const FVector U = Guard->GetMovementUpVector();
+			SpawnDummy(Here + U * Distance,  TEXT("Up"));
+			SpawnDummy(Here - U * Distance,  TEXT("Down"));
+			SpawnDummy(Here - R * Distance,  TEXT("Left"));
+			SpawnDummy(Here + R * Distance,  TEXT("Right"));
+
+			const EPTKFacingDirection Order[] = {
+				EPTKFacingDirection::Up, EPTKFacingDirection::Down,
+				EPTKFacingDirection::Left, EPTKFacingDirection::Right };
+
+			for (int32 i = 0; i < 4; ++i)
+			{
+				const EPTKFacingDirection Dir = Order[i];
+				FTimerHandle Shot;
+				W->GetTimerManager().SetTimer(Shot,
+					FTimerDelegate::CreateWeakLambda(this, [this, Dir]()
+					{
+						APTKTopDownCharacter* const G =
+							Cast<APTKTopDownCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+						if (!G) { return; }
+						G->SetMoveInput(FVector2D::ZeroVector);
+						G->SetFacingDirection(Dir);
+						UE_LOG(LogPTK, Warning, TEXT("AIM RIG | firing %s"),
+							*UPTKTypesLibrary::DirectionToString(Dir));
+						G->StartAttack();
+					}), 0.6f + i * 1.4f, false);
+			}
+
+			FTimerHandle Done;
+			W->GetTimerManager().SetTimer(Done,
+				FTimerDelegate::CreateWeakLambda(this, [this]()
+				{
+					LogDummies(TEXT("aim results"));
+				}), 0.6f + 4 * 1.4f + 1.0f, false);
+		}), FMath::Max(StartDelay, 0.01f), false);
+}
+
+void APTKCombatHUD::PTKSplashTest(float Distance, float StartDelay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FTimerHandle Setup;
+	World->GetTimerManager().SetTimer(Setup,
+		FTimerDelegate::CreateWeakLambda(this, [this, Distance]()
+		{
+			APTKTopDownCharacter* const Guard = ClearFieldForRig();
+			UWorld* const W = GetWorld();
+			if (!Guard || !W)
+			{
+				return;
+			}
+
+			const FVector Here = Guard->GetActorLocation();
+			const FVector R = Guard->GetMovementRightVector();
+			const FVector U = Guard->GetMovementUpVector();
+
+			// Three inside one 96 uu blast, one well outside it. The far dummy
+			// is the control: a splash that catches it is not a 96 uu splash.
+			SpawnDummy(Here + U * Distance,                    TEXT("Centre"));
+			SpawnDummy(Here + U * Distance + R * 55.0f,        TEXT("Near_R"));
+			SpawnDummy(Here + U * (Distance + 60.0f),          TEXT("Near_U"));
+			SpawnDummy(Here + U * Distance + R * 220.0f,       TEXT("Far"));
+
+			FTimerHandle Shot;
+			W->GetTimerManager().SetTimer(Shot,
+				FTimerDelegate::CreateWeakLambda(this, [this]()
+				{
+					APTKTopDownCharacter* const G =
+						Cast<APTKTopDownCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+					if (!G) { return; }
+					G->SetMoveInput(FVector2D::ZeroVector);
+					G->SetFacingDirection(EPTKFacingDirection::Up);
+					UE_LOG(LogPTK, Warning, TEXT("AIM RIG | one shot into the cluster"));
+					G->StartAttack();
+				}), 0.8f, false);
+
+			FTimerHandle Done;
+			W->GetTimerManager().SetTimer(Done,
+				FTimerDelegate::CreateWeakLambda(this, [this]()
+				{
+					LogDummies(TEXT("splash results"));
+				}), 2.6f, false);
+		}), FMath::Max(StartDelay, 0.01f), false);
 }

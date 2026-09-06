@@ -61,10 +61,10 @@ import unreal
 # ---------------------------------------------------------------------------
 # Contract - matches Tools/ExtractWraithAnimations.py and Docs/SPRITE_SPEC.md
 # ---------------------------------------------------------------------------
-FRAME_WIDTH = 192
-FRAME_HEIGHT = 192
-PIVOT_X = 96.0
-PIVOT_Y = 179.0
+FRAME_WIDTH = 224
+FRAME_HEIGHT = 224
+PIVOT_X = 112.0
+PIVOT_Y = 200.0
 PIXELS_PER_UNREAL_UNIT = 1.0
 
 ARROW_SIZE = 129
@@ -92,9 +92,9 @@ IMPACT_FRAME_COUNT = 3
 # Wraith:  5000 HP, 30 damage, 270 uu/s, 7.0 tiles - fragile, quick, and the
 #          only one who can hurt something that is not already on top of him.
 WRAITH_MAX_HP = 5000.0
-# Raised from 30 on request. Two arrows now kill a 100 HP Swarm Node instead of
-# four, and with the blast below one shot into a pack can clear several.
-WRAITH_DAMAGE = 50.0
+# Back to 30 on request, after a spell at 50. With the blast below, 50 let two
+# arrows clear an entire wave, which put him far ahead of every other guard.
+WRAITH_DAMAGE = 30.0
 WRAITH_MOVE_SPEED = 270.0
 TILE_SIZE = 64.0
 WRAITH_RANGE_TILES = 7.0
@@ -121,11 +121,14 @@ ARROW_SPEED = 900.0
 # enemies are a moving crowd.
 ARROW_COLLISION_RADIUS = 12.0
 
-# Blast radius on impact, in world units - 1.5 tiles. Everything hostile inside
-# takes the full 50, once each, which is the same rule Ravager's and Aegis's
-# melee arcs already use. This is what turns a near-miss into a hit and makes
-# firing into a pack worthwhile.
-ARROW_SPLASH_RADIUS = 1.5 * TILE_SIZE
+# ZERO: one arrow, one enemy.
+#
+# He briefly carried a 1.5-tile blast, which made a single shot clear most of a
+# wave and put him far ahead of every other guard. He is the single-target
+# marksman again; the burst belongs to Sentinel, who is the mage. Zero is
+# handled as its own case in APTKProjectile - even a tiny radius would still
+# catch an enemy capsule pressed against the one that was struck.
+ARROW_SPLASH_RADIUS = 0.0
 
 # Measured off the finished attack frames, where the nocked arrow's centroid
 # sits 64-82 px above the feet (mean 72) and about 33 px forward in profile.
@@ -683,10 +686,8 @@ def verify():
             info("PASS  BP_Wraith fires BP_Arrow_Wraith at {0:.0f} uu/s, released at "
                  "{1:.3f} of the attack (frame 6 of 8)".format(
                      ARROW_SPEED, WRAITH_RELEASE_FRACTION))
-            info("PASS  arrow deals {0:.0f} in a {1:.0f} uu blast ({2} tiles), "
-                 "sweep radius {3:.0f}".format(WRAITH_DAMAGE, ARROW_SPLASH_RADIUS,
-                                               ARROW_SPLASH_RADIUS / TILE_SIZE,
-                                               ARROW_COLLISION_RADIUS))
+            info("PASS  arrow deals {0:.0f} to a SINGLE target (splash radius 0), "
+                 "sweep radius {1:.0f}".format(WRAITH_DAMAGE, ARROW_COLLISION_RADIUS))
             info("PASS  BP_Wraith carries IMC_PTK_Default, IA_Move and IA_Attack, "
                  "so WASD and the attack key reach him when possessed")
             # The point of the whole phase: Wraith IS a guard, not a parallel

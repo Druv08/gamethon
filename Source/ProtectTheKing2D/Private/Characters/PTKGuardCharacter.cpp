@@ -42,3 +42,33 @@ APTKGuardCharacter::APTKGuardCharacter(const FObjectInitializer& ObjectInitializ
 	// Facing the camera reads best for a character standing on a spawn pad.
 	DefaultFacingDirection = EPTKFacingDirection::Down;
 }
+
+void APTKGuardCharacter::PostInitializeComponents()
+{
+	// BEFORE Super, and not in BeginPlay, because Super is where APawn spawns
+	// the default AI controller for a placed guard - and that controller reads
+	// HomePosition the moment it possesses. Capturing the post in BeginPlay
+	// left every AI guard believing its post was the world origin, so all four
+	// tried to defend the same spot.
+	CaptureHomePosition();
+	Super::PostInitializeComponents();
+}
+
+void APTKGuardCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Again for a guard SPAWNED at runtime, whose transform may not have been
+	// final when PostInitializeComponents ran.
+	CaptureHomePosition();
+}
+
+void APTKGuardCharacter::CaptureHomePosition()
+{
+	// Where the guard stands IS its post, so a designer sets it by dragging the
+	// actor. An explicitly authored HomePosition is left alone.
+	if (HomePosition.IsNearlyZero())
+	{
+		HomePosition = GetActorLocation();
+	}
+}

@@ -597,6 +597,13 @@ bool APTKTopDownCharacter::StartAttack()
 	}
 
 	UpdateAnimation();
+
+	// One line per ACCEPTED swing - refused ones are logged above with their
+	// reason. Without this the only trace of an attack is the damage it deals,
+	// so a swing that connects with nothing is indistinguishable from a swing
+	// that was never allowed to start.
+	UE_LOG(LogPTK, Verbose, TEXT("SWING | %s facing %s | %.2fs"),
+		*GetName(), *UPTKTypesLibrary::DirectionToString(Direction), AttackDuration);
 	return true;
 }
 

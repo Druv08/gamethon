@@ -50,23 +50,91 @@ import ptk_png
 # ---------------------------------------------------------------------------
 # Grid
 # ---------------------------------------------------------------------------
-class Grid(object):
-    """Cell geometry over a sheet. Pitch is float; column edges are rounded."""
+def find_row_bands(sheet, rows, alpha_threshold=128, min_gap=16):
+    """
+    The `rows` horizontal bands of actual content, as [(y0, y1), ...] inclusive.
 
-    def __init__(self, sheet, columns, rows):
+    Rows are NOT always sheet.height / rows. One delivered sheet - Reaver's
+    front/back attack, 1672x941 - has its two figures at 154-470 and 519-845,
+    so an even split at 470 puts the last pixel row of the FIRST figure inside
+    the SECOND cell. That one stray row made the second cell measure the full
+    cell height instead of the body, which scaled the whole sheet to two thirds
+    of the character's proper size.
+
+    Runs separated by less than `min_gap` are merged, because a figure can have
+    a one-or-two row break in it (a raised blade clearing the shoulders), and
+    only the `rows` tallest survive. Returns None if that does not produce
+    exactly `rows` bands, so the caller can fall back to the even split rather
+    than trust a guess.
+    """
+    w, h, px = sheet.width, sheet.height, sheet.px
+    occupied = []
+    for y in range(h):
+        base = y * w * 4
+        found = False
+        for x in range(w):
+            if px[base + x * 4 + 3] >= alpha_threshold:
+                found = True
+                break
+        occupied.append(found)
+
+    runs = []
+    start = None
+    for y in range(h):
+        if occupied[y]:
+            if start is None:
+                start = y
+        elif start is not None:
+            runs.append((start, y - 1))
+            start = None
+    if start is not None:
+        runs.append((start, h - 1))
+    if not runs:
+        return None
+
+    merged = [runs[0]]
+    for run in runs[1:]:
+        if run[0] - merged[-1][1] - 1 < min_gap:
+            merged[-1] = (merged[-1][0], run[1])
+        else:
+            merged.append(run)
+
+    if len(merged) < rows:
+        return None
+    merged.sort(key=lambda b: b[0] - b[1])       # tallest first
+    return sorted(merged[:rows])
+
+
+class Grid(object):
+    """
+    Cell geometry over a sheet. Pitch is float; column edges are rounded.
+
+    `row_bounds` overrides the even vertical split with measured content bands -
+    see find_row_bands. Left None, behaviour is exactly what it always was.
+    """
+
+    def __init__(self, sheet, columns, rows, row_bounds=None):
         self.sheet = sheet
         self.columns = columns
         self.rows = rows
         self.cell_w = sheet.width / float(columns)
         self.cell_h = sheet.height // rows
+        self.row_bounds = row_bounds
+
+    def height_of(self, row):
+        if self.row_bounds:
+            y0, y1 = self.row_bounds[row]
+            return y1 - y0 + 1
+        return self.cell_h
 
     def origin(self, col, row):
-        return int(round(col * self.cell_w)), row * self.cell_h
+        y0 = self.row_bounds[row][0] if self.row_bounds else row * self.cell_h
+        return int(round(col * self.cell_w)), y0
 
     def cell(self, col, row):
         x0, y0 = self.origin(col, row)
         x1 = int(round((col + 1) * self.cell_w))
-        return self.sheet.crop(x0, y0, x1, y0 + self.cell_h)
+        return self.sheet.crop(x0, y0, x1, y0 + self.height_of(row))
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +162,120 @@ def build_masks(img, alpha_threshold, is_effect):
             if not is_effect(px[i], px[i + 1], px[i + 2]):
                 body[row + x] = 1
     return body, full, w, h
+
+
+def head_width(img, alpha_threshold, is_effect,
+               min_fraction=0.11, band_fraction=0.05):
+    """
+    Width of the head - hood, helm or crown - in source pixels, or None.
+
+    WHY A HEAD AND NOT A HEIGHT
+    ---------------------------
+    Scale normalisation has to answer "how big is this character", and the
+    obvious answer - the silhouette from the top of the head to the feet - is
+    the wrong one, because it is a POSE measurement as much as a size one. A
+    figure that crouches, lunges or leans is genuinely shorter, and matching
+    heights across sheets therefore shrinks whichever sheet happens to stand
+    taller. That is exactly how Reaver's attack ended up 8.6% smaller than his
+    walk: his attack ready-pose stands straighter than his walk pose, so
+    equalising heights made the whole swing smaller than the stride it
+    interrupts, and the player saw him shrink and spring back.
+
+    A head does not crouch. It is the same size in every frame of every
+    animation, so matching heads is matching size and nothing else.
+
+    HOW THE HEAD IS FOUND
+    ---------------------
+    Walking down from the top of the body silhouette, the head is the first run
+    wide enough not to be an arm (`min_fraction` of the cell) that is still
+    that wide six rows lower. A blade or a raised fist is narrow, or is wide for
+    one row and gone by the next; a hood is neither. The width returned is the
+    MEDIAN width of the run containing that cap over the next few rows, so a
+    single ragged row cannot set the answer.
+
+    Effect pixels are excluded through `is_effect`, so a lit blade crossing the
+    head does not become part of it.
+    """
+    cap = head_cap(img, alpha_threshold, is_effect, min_fraction, band_fraction)
+    return cap[1] if cap else None
+
+
+def head_cap(img, alpha_threshold, is_effect,
+             min_fraction=0.11, band_fraction=0.05):
+    """
+    (top row of the head, head width) in source pixels, or None.
+
+    The top row is the one measurement of "how tall is this character" that a
+    raised weapon cannot inflate. Measuring the silhouette from its topmost
+    opaque pixel counts a blade held overhead as part of the body, which makes
+    the frame appear far taller than the man and scales him down to compensate.
+    """
+    body, _full, w, h = build_masks(img, alpha_threshold, is_effect)
+
+    def runs(y):
+        out, x = [], 0
+        row = body[y * w:(y + 1) * w]
+        while x < w:
+            if row[x]:
+                x0 = x
+                while x < w and row[x]:
+                    x += 1
+                out.append((x0, x - 1))
+            else:
+                x += 1
+        return out
+
+    tops = [y for y in range(h) if any(body[y * w:(y + 1) * w])]
+    if not tops:
+        return None
+
+    minw = max(3, int(w * min_fraction))
+    for y in range(tops[0], h - 8):
+        here = runs(y)
+        if not here:
+            continue
+        x0, x1 = max(here, key=lambda t: t[1] - t[0])
+        if (x1 - x0 + 1) < minw:
+            continue
+        lower = runs(y + 6)
+        if not lower:
+            continue
+        lx0, lx1 = max(lower, key=lambda t: t[1] - t[0])
+        if (lx1 - lx0 + 1) < (x1 - x0 + 1) * 0.85:
+            continue
+
+        seed = (x0 + x1) // 2
+        widths = []
+        for yy in range(y + 2, min(h, y + max(4, int(h * band_fraction)))):
+            for a0, a1 in runs(yy):
+                if a0 <= seed <= a1:
+                    widths.append(a1 - a0 + 1)
+                    break
+        if not widths:
+            continue
+        widths.sort()
+        return (y, widths[len(widths) // 2])
+    return None
+
+
+def sheet_head_width(cells, alpha_threshold, is_effect):
+    """
+    Median head width over a whole sheet, or None.
+
+    The median rather than the mean: in a few frames of any swing a blade
+    crosses the hood and merges with it, and those frames measure far too wide.
+    A median ignores them without anyone having to decide which they are.
+    """
+    seen = []
+    for row in cells:
+        for cell in row:
+            value = head_width(cell, alpha_threshold, is_effect)
+            if value:
+                seen.append(value)
+    if not seen:
+        return None
+    seen.sort()
+    return float(seen[len(seen) // 2])
 
 
 def mask_bounds(mask, w, h):

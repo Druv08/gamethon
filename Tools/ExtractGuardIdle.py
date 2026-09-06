@@ -1,7 +1,7 @@
 """
 Protect the King - 2D
-Extracts the four REAL directional idle frames for Aegis and Wraith from their
-character turnaround sheets.
+Extracts the four REAL directional idle frames for Aegis, Wraith and Reaver
+from their character turnaround sheets.
 
     source : <Downloads>/gamethon pics/design 2d pics/<name> pics/<name>.png
              (READ ONLY - never renamed, moved or modified)
@@ -17,7 +17,8 @@ WHY THIS EXISTS
 Aegis and Wraith shipped with Idle_<Dir>.png copied from Walk_<Dir>_01 - the
 walk cycle's contact pose - because no idle sheet was delivered with their
 animations. It is a walking frame, so standing still looked like a man frozen
-mid-stride.
+mid-stride. Reaver was built with this from the start and never had that
+stand-in.
 
 The real standing art was there the whole time, in the turnaround sheet that
 sits beside the animation sheets in each character's folder. Ravager's idle has
@@ -43,21 +44,28 @@ HOW A TURNAROUND BECOMES FOUR FRAMES
    at every tolerance tried.
 
 3. Each view is scaled so its body height matches the SAME target the character's
-   walk and attack frames were normalised to - 122 for Aegis, 112 for Wraith -
-   and composed onto the standard 192x192 canvas at pivot (96, 179). That is
-   what stops the character changing size the moment it stops walking.
+   walk and attack frames were normalised to - 122 for Aegis, 114 for Reaver,
+   112 for Wraith - and composed onto the standard 192x192 canvas at pivot
+   (96, 179). That is what stops the character changing size the moment it
+   stops walking.
 
 
 DIRECTIONS ARE PROVEN, NOT ASSUMED
 ----------------------------------
 Down vs Up uses bright-blue coverage, the same test their walk sheets pass:
 the front carries the shield emblem / hood eye, the back only a cape.
-  Aegis   view0 4.07%  vs view1 0.49%
-  Wraith  view0 1.71%  vs view1 0.03%
+  Aegis   view0 4.07%  vs view1 0.49%   (whole frame)
+  Wraith  view0 1.71%  vs view1 0.03%   (whole frame)
+  Reaver  view0 0.84%  vs view1 0.08%   (HEAD only - he carries a lit blade in
+          each hand in every view, so the whole-frame reading barely moves,
+          3.06% against 1.19%. front_metric picks which test a character uses.)
 
 Left vs Right uses the outermost-blue-mass bias already calibrated on each
 character's own walk sheets, where positive means LEFT.
   Aegis   view2 +0.243   view3 -0.216   -> a genuine mirrored pair
+  Reaver  view2 -0.249   view3 +0.263   -> a genuine pair, but in the OPPOSITE
+          order to Aegis: his view2 faces RIGHT. Confirmed by overlaying view3
+          flipped onto view2, which matches. Never assume the order.
   Wraith  view2 +0.161   view3 +0.175   -> BOTH FACE LEFT
 
 verify() re-runs both checks and refuses to write if the art contradicts them.
@@ -89,8 +97,19 @@ import ptk_sheet
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ART_ROOT = r"C:\Users\druvk\Downloads\gamethon pics\design 2d pics"
 
-CANVAS = (192, 192)
-PIVOT = (96, 179)
+# 224x224 with the pivot at (112, 200), shared by every guard.
+#
+# It used to be 192x192 at (96, 179), which left Ravager 9 px of clearance at
+# his sides and 4 px under his boots, and Sentinel 6 px over his crown. Nothing
+# was actually clipped, but a body that nearly fills its box has no room for a
+# taller pose or a wider swing, and it reads on screen as a character whose head
+# has been shaved off. The box is now big enough that the worst frame of the
+# worst guard still has ~20 px of air around it.
+#
+# This is MARGIN, not scale: the character is drawn at exactly the same size and
+# his feet still land on the pivot. Only the transparent border grows.
+CANVAS = (224, 224)
+PIVOT = (112, 200)
 DIRECTIONS = ("Down", "Up", "Left", "Right")
 
 BG_TOLERANCE = 14
@@ -107,17 +126,42 @@ CHARACTERS = {
     "Aegis": dict(
         source=os.path.join(ART_ROOT, "aegis pics", "aegis.png"),
         frames=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Aegis", "Frames"),
-        # Matches TARGET_BODY_HEIGHT in Tools/ExtractAegisAnimations.py.
-        target_height=122.0,
+        target_height=116.0,
         # view index -> direction. Measured, not assumed; see verify().
         views={0: "Down", 1: "Up", 2: "Left", 3: "Right"},
         mirror={},
     ),
+    "Reaver": dict(
+        source=os.path.join(ART_ROOT, "reaver pics", "reaver.png"),
+        frames=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Reaver", "Frames"),
+        target_height=116.0,
+        # NOTE the profile order is the REVERSE of Aegis's - view2 faces right
+        # and view3 left. Measured (-0.249 / +0.263) and confirmed by overlaying
+        # view3 flipped onto view2, which matches: a genuine mirrored pair, so
+        # all four of his idle views are real art.
+        views={0: "Down", 1: "Up", 2: "Right", 3: "Left"},
+        mirror={},
+        # He carries a lit blade in each hand in every view, so the whole-frame
+        # test barely separates front from back (3.06% vs 1.19%). His head does:
+        # 0.84% against 0.08%.
+        front_metric="head",
+    ),
+    "Sentinel": dict(
+        source=os.path.join(ART_ROOT, "sentinel pics", "sentinel.png"),
+        frames=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Sentinel", "Frames"),
+        target_height=116.0,
+        views={0: "Down", 1: "Up", 2: "Left", 3: "Right"},
+        mirror={},
+        # Blue is useless for a blue mage orbited by blue orbs, and whole-frame
+        # gold barely moves because his cape is gold-trimmed from behind too.
+        # Gold across the TORSO is what separates them - see his extractor.
+        front_metric="torso_gold",
+        # 16 px taller at the bottom, same pivot - see his extractor.
+    ),
     "Wraith": dict(
         source=os.path.join(ART_ROOT, "wraith pics", "wraith.png"),
         frames=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Wraith", "Frames"),
-        # Matches TARGET_BODY_HEIGHT in Tools/ExtractWraithAnimations.py.
-        target_height=112.0,
+        target_height=116.0,
         views={0: "Down", 1: "Up", 2: "Left"},
         # Right is view3 flipped - he has no right-facing pose. See the docstring.
         mirror={"Right": 3},
@@ -226,6 +270,61 @@ def bright_blue_fraction(img, box):
     return (100.0 * hot / total) if total else 0.0
 
 
+def head_blue_fraction(img, box):
+    """
+    Bright blue inside the head / upper-torso box only.
+
+    Reaver needs this because he carries a glowing blade in each hand in every
+    view, and those blades swamp a whole-frame reading. What actually differs
+    between his front and back is the lit mask inside the hood.
+    """
+    x0, x1, y0, y1 = box
+    w, px = img.width, img.px
+    bw, bh = x1 - x0, y1 - y0
+    cx0, cx1 = x0 + int(bw * 0.28), x0 + int(bw * 0.72)
+    cy0, cy1 = y0, y0 + int(bh * 0.45)
+    total = hot = 0
+    for y in range(cy0, cy1 + 1):
+        for x in range(cx0, cx1 + 1):
+            i = (y * w + x) * 4
+            if px[i + 3] < SRC_ALPHA_THRESHOLD:
+                continue
+            total += 1
+            if px[i + 2] > 190 and px[i + 2] - px[i] > 90:
+                hot += 1
+    return (100.0 * hot / total) if total else 0.0
+
+
+def torso_gold_fraction(img, box):
+    """
+    Gold across the middle of the body.
+
+    Sentinel needs this: he is a blue mage surrounded by blue orbs, so a blue
+    test says nothing about which way he faces, and his cape is gold-trimmed
+    from behind so a whole-frame gold test says little more. The robe's facings
+    and chest emblem are on the front alone.
+    """
+    x0, x1, y0, y1 = box
+    w, px = img.width, img.px
+    bw, bh = x1 - x0, y1 - y0
+    cx0, cx1 = x0 + int(bw * 0.30), x0 + int(bw * 0.70)
+    cy0, cy1 = y0 + int(bh * 0.25), y0 + int(bh * 0.65)
+    total = hot = 0
+    for y in range(cy0, cy1 + 1):
+        for x in range(cx0, cx1 + 1):
+            i = (y * w + x) * 4
+            if px[i + 3] < SRC_ALPHA_THRESHOLD:
+                continue
+            total += 1
+            if px[i] > 140 and px[i] - px[i + 2] > 40:
+                hot += 1
+    return (100.0 * hot / total) if total else 0.0
+
+
+FRONT_METRICS = {"whole": bright_blue_fraction, "head": head_blue_fraction,
+                 "torso_gold": torso_gold_fraction}
+
+
 def facing_bias(img, box):
     """Positive = leans LEFT. The metric each character's walk sheets calibrated."""
     x0, x1, y0, y1 = box
@@ -262,14 +361,16 @@ def verify(name, cfg, img, boxes):
     if not down or not up:
         fail(name + ": the view plan must name a Down and an Up")
 
-    front = bright_blue_fraction(img, boxes[down[0]])
-    back = bright_blue_fraction(img, boxes[up[0]])
+    metric = FRONT_METRICS[cfg.get("front_metric", "whole")]
+    front = metric(img, boxes[down[0]])
+    back = metric(img, boxes[up[0]])
     if front <= back:
         fail("{0}: view{1} reads {2:.2f}% bright blue and view{3} {4:.2f}% - the "
              "front must carry MORE, so the Down/Up mapping is wrong"
              .format(name, down[0], front, up[0], back))
 
-    notes = ["Down/Up: front {0:.2f}% vs back {1:.2f}% bright blue".format(front, back)]
+    notes = ["Down/Up: front {0:.2f}% vs back {1:.2f}% ({2} metric)".format(
+        front, back, cfg.get("front_metric", "whole"))]
 
     for index, direction in cfg["views"].items():
         if direction not in ("Left", "Right"):
@@ -305,7 +406,12 @@ def measure(img, box):
     if not solid or not heads:
         return None
     feet = solid[-1]
-    top = heads[0]
+    # The hood cap, not the topmost opaque row: Reaver holds a lit blade over
+    # his head in the turnaround and Sentinel a staff, and counting those as
+    # "the top of the character" made the view measure half again as tall as the
+    # man and scaled him down to match.
+    cap = ptk_sheet.head_cap(view, SRC_ALPHA_THRESHOLD, is_energy)
+    top = cap[0] if cap else heads[0]
     span = feet - top
 
     lo = max(0, int(feet - span * 0.55))
@@ -367,6 +473,14 @@ def build(name, cfg, measure_only):
         m = measure(img, boxes[index])
         if m is None:
             fail("{0}: view{1} is empty".format(name, index))
+
+        # Matched on hood-to-feet height, deliberately, and NOT on head width
+        # like the animation sheets: a turnaround is a separate drawing of the
+        # character with its own proportions - Reaver's turnaround head is a
+        # tenth smaller against his body than his walk head is - so forcing the
+        # heads to agree would make the standing pose half again too tall.
+        # Height is also the measure the guards are compared on across the
+        # roster, which is what keeps the idle the same size as everyone else's.
         scale = cfg["target_height"] / float(m["height"])
 
         log("  {0:<5s} view{1}{2}  body {3} px -> x{4:.4f}  ({5} px finished)".format(
@@ -375,9 +489,11 @@ def build(name, cfg, measure_only):
         if measure_only:
             continue
 
+        canvas = cfg.get("canvas", CANVAS)
+        pivot = cfg.get("pivot", PIVOT)
         frame = ptk_sheet.render_frame(
             img, x0, y0, x1 - x0, y1 - y0,
-            m["centre"], m["feet"], scale, CANVAS, PIVOT,
+            m["centre"], m["feet"], scale, canvas, pivot,
             x_bounds=(x0, x1))
         ptk_sheet.harden_alpha(frame, OUT_ALPHA_THRESHOLD)
         if flip:

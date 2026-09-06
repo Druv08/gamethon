@@ -57,6 +57,28 @@ CHARACTERS = {
         # none of his body reads as energy.
         effect=lambda r, g, b: b > 150 and b - r > 80,
     ),
+    "Reaver": dict(
+        root=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Reaver", "Frames"),
+        canvas=(192, 192), pivot=(96, 179),
+        animations=(("Idle", 1), ("Walk", 8), ("Attack", 8), ("Death", 8)),
+        nondirectional=("Death",),
+        holdstill=("Walk",),
+        # Twin blades, their crescent arcs, the mask and chest gems. His cloak
+        # and armour are dark navy, well under this gate.
+        effect=lambda r, g, b: b > 150 and b - r > 80,
+    ),
+    "Sentinel": dict(
+        root=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Sentinel", "Frames"),
+        # 16 px taller at the bottom than the other guards, same pivot - his
+        # death collapse needs it. See his extractor.
+        canvas=(192, 208), pivot=(96, 179),
+        animations=(("Idle", 1), ("Walk", 8), ("Attack", 8), ("Death", 8)),
+        nondirectional=("Death",),
+        holdstill=("Walk",),
+        # Floating orbs, staff gems and the cast glow. His robe is deep blue but
+        # dark, and his trim gold, so neither reads as energy.
+        effect=lambda r, g, b: b > 150 and b - r > 80,
+    ),
     "Wraith": dict(
         root=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Wraith", "Frames"),
         canvas=(192, 192), pivot=(96, 179),
@@ -257,9 +279,15 @@ def check_character(name, cfg):
             seq = sequence(cfg, anim, direction, count)
             if len(seq) < 2:
                 continue
-            bottoms = [stats[p]["bottom"] for p in seq]
-            centres = [stats[p]["centre"] for p in seq]
+            # A frame can be pure effect with no body left to measure - the last
+            # frame of Reaver's death is entirely blue dissolve. Such a frame has
+            # no anchor to compare, so it is dropped from the spread rather than
+            # crashing the run or being counted as a drift of zero.
+            bottoms = [stats[p]["bottom"] for p in seq if stats[p]["bottom"] is not None]
+            centres = [stats[p]["centre"] for p in seq if stats[p]["centre"] is not None]
             bodies = [stats[p]["body"] for p in seq]
+            if len(bottoms) < 2 or len(centres) < 2:
+                continue
             sb = max(bottoms) - min(bottoms)
             sc = max(centres) - min(centres)
             label = "{0} {1:<5s}".format(anim, direction)
