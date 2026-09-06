@@ -4,6 +4,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Combat/PTKCombatTarget.h"
+#include "Combat/PTKProjectile.h"
 #include "Components/PTKHealthComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
@@ -303,7 +304,12 @@ void APTKTopDownCharacter::Tick(float DeltaSeconds)
 	// normal Walk/Idle logic immediately override it": while TickAttack still
 	// claims the character, neither the facing nor the state below can run,
 	// so the swing always completes and always ends in the direction it began.
-	if (TickAttack(DeltaSeconds))
+	if (TickDefend(DeltaSeconds))
+	{
+		// The brace owns the character outright: facing is pinned for the whole
+		// block, and neither the attack nor the walk/idle rules below may run.
+	}
+	else if (TickAttack(DeltaSeconds))
 	{
 		if (!bLockFacingDuringAttack && bMoving)
 		{
@@ -360,6 +366,15 @@ void APTKTopDownCharacter::Tick(float DeltaSeconds)
 
 void APTKTopDownCharacter::SetMoveInput(FVector2D NewInput)
 {
+	// A brace is a stance: he plants his feet behind the shield and holds. The
+	// input is swallowed rather than queued, so releasing the key during a block
+	// cannot make him lurch when it ends.
+	if (MovementState == EPTKMovementState::Defend)
+	{
+		MoveInput = FVector2D::ZeroVector;
+		return;
+	}
+
 	// Clamp the magnitude to 1 rather than normalising it.
 	//
 	//  - Keyboard W+A arrives as (-1, 1), length 1.414, and is scaled down to
@@ -521,9 +536,15 @@ void APTKTopDownCharacter::Input_Attack(const FInputActionValue& /*Value*/)
 	StartAttack();
 }
 
+void APTKTopDownCharacter::Input_Defend(const FInputActionValue& /*Value*/)
+{
+	StartDefend();
+}
+
 bool APTKTopDownCharacter::StartAttack()
 {
-	if (MovementState == EPTKMovementState::Dead)
+	if (MovementState == EPTKMovementState::Dead
+		|| MovementState == EPTKMovementState::Defend)
 	{
 		return false;
 	}
@@ -579,6 +600,93 @@ bool APTKTopDownCharacter::StartAttack()
 	return true;
 }
 
+bool APTKTopDownCharacter::StartDefend()
+{
+	if (MovementState == EPTKMovementState::Dead
+		|| MovementState == EPTKMovementState::Defend
+		|| MovementState == EPTKMovementState::Attack)
+	{
+		return false;
+	}
+
+	const EPTKFacingDirection Direction = FacingDirection;
+	UPaperFlipbook* const Defence = DefendFlipbooks.GetForDirection(Direction);
+	if (!Defence)
+	{
+		// No shield art: this character simply has no such skill. Refusing here
+		// rather than entering the state is what keeps Ravager and Wraith
+		// exactly as they were - they can never be made invulnerable by a key
+		// they were never given.
+		UE_LOG(LogPTK, Verbose,
+			TEXT("%s cannot defend facing %s - no defend flipbook assigned."),
+			*GetName(), *UPTKTypesLibrary::DirectionToString(Direction));
+		return false;
+	}
+
+	const float Rate = FMath::Max(DefendPlayRate, KINDA_SMALL_NUMBER);
+	const float Length = Defence->GetTotalDuration();
+	DefendTimeRemaining = (Length > KINDA_SMALL_NUMBER)
+		? (Length / Rate)
+		: DefendFallbackDuration;
+
+	DefendFacingDirection = Direction;
+	FacingDirection = Direction;
+	MovementState = EPTKMovementState::Defend;
+	MoveInput = FVector2D::ZeroVector;
+
+	// Immunity is raised the instant the state begins, not at some frame of the
+	// animation: a defence that only starts working halfway through would be
+	// impossible to time and would read as a broken block.
+	if (HealthComponent)
+	{
+		HealthComponent->SetDamageImmune(true);
+	}
+
+	if (Sprite)
+	{
+		Sprite->SetFlipbook(Defence);
+		Sprite->SetLooping(false);
+		Sprite->SetPlaybackPosition(0.0f, false);
+		Sprite->Play();
+	}
+
+	UpdateAnimation();
+	return true;
+}
+
+bool APTKTopDownCharacter::TickDefend(float DeltaSeconds)
+{
+	if (MovementState != EPTKMovementState::Defend)
+	{
+		return false;
+	}
+
+	FacingDirection = DefendFacingDirection;
+	DefendTimeRemaining -= DeltaSeconds;
+	if (DefendTimeRemaining > 0.0f)
+	{
+		return true;
+	}
+
+	// Finished. Drop the shield and let this same Tick pick the follow-on state
+	// from whatever the player is holding.
+	EndDefend();
+	return false;
+}
+
+void APTKTopDownCharacter::EndDefend()
+{
+	DefendTimeRemaining = 0.0f;
+	if (HealthComponent)
+	{
+		HealthComponent->SetDamageImmune(false);
+	}
+	if (MovementState == EPTKMovementState::Defend)
+	{
+		MovementState = EPTKMovementState::Idle;
+	}
+}
+
 bool APTKTopDownCharacter::TickAttack(float DeltaSeconds)
 {
 	if (MovementState != EPTKMovementState::Attack)
@@ -601,7 +709,7 @@ bool APTKTopDownCharacter::TickAttack(float DeltaSeconds)
 		if (Elapsed >= AttackDuration * AttackImpactFraction)
 		{
 			bAttackImpactApplied = true;
-			PerformAttackHit();
+			ExecuteAttackImpact();
 		}
 	}
 
@@ -627,6 +735,9 @@ UPaperFlipbook* APTKTopDownCharacter::SelectFlipbook_Implementation(
 		// then keeps whatever is already on screen, freezing the last living
 		// pose rather than blanking the character.
 		return DeathFlipbook;
+
+	case EPTKMovementState::Defend:
+		return DefendFlipbooks.GetForDirection(Direction);
 
 	case EPTKMovementState::Attack:
 		return AttackFlipbooks.GetForDirection(Direction);
@@ -681,6 +792,7 @@ void APTKTopDownCharacter::UpdateAnimation()
 	switch (MovementState)
 	{
 	case EPTKMovementState::Attack: DesiredRate = AttackPlayRate; break;
+	case EPTKMovementState::Defend: DesiredRate = DefendPlayRate; break;
 	case EPTKMovementState::Walk:   DesiredRate = WalkPlayRate;   break;
 	default:                        DesiredRate = IdlePlayRate;   break;
 	}
@@ -691,10 +803,11 @@ void APTKTopDownCharacter::UpdateAnimation()
 		AppliedPlayRate = DesiredRate;
 	}
 
-	// An attack is a one-shot: it must hold its final pose if the state
-	// outlives the flipbook by a frame, never snap back to the wind-up.
-	// Idle and Walk are cycles and always loop.
-	Sprite->SetLooping(MovementState != EPTKMovementState::Attack);
+	// An attack and a brace are one-shots: they must hold their final pose if
+	// the state outlives the flipbook by a frame, never snap back to the
+	// wind-up. Idle and Walk are cycles and always loop.
+	Sprite->SetLooping(MovementState != EPTKMovementState::Attack
+		&& MovementState != EPTKMovementState::Defend);
 
 	PreviousMovementState = MovementState;
 }
@@ -797,6 +910,13 @@ void APTKTopDownCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 		{
 			EnhancedInput->BindAction(AttackAction, ETriggerEvent::Started, this, &APTKTopDownCharacter::Input_Attack);
 		}
+
+		// Also Started, for the same reason. Unset on every character without a
+		// shield, so nothing binds and nothing changes for them.
+		if (DefendAction)
+		{
+			EnhancedInput->BindAction(DefendAction, ETriggerEvent::Started, this, &APTKTopDownCharacter::Input_Defend);
+		}
 	}
 	else
 	{
@@ -882,21 +1002,84 @@ bool APTKTopDownCharacter::IsValidAttackVictim(const AActor* Victim) const
 	return IsHostileTo(Victim);
 }
 
-FVector APTKTopDownCharacter::GetAttackHitCentre() const
+FVector APTKTopDownCharacter::GetFacingWorldDirection() const
 {
-	// The melee test sits in FRONT of the character, in the direction it is
-	// facing on screen. Facing is a flipbook choice, not an actor rotation, so
-	// the offset is built from the screen basis rather than from GetActorForwardVector.
-	FVector Offset = FVector::ZeroVector;
+	// Facing is a flipbook choice, not an actor rotation, so the world vector
+	// is built from the screen basis rather than from GetActorForwardVector.
+	// The basis itself comes from the camera rig (UpdateMovementBasis) because
+	// screen-right is NOT +X in this project.
 	switch (FacingDirection)
 	{
-	case EPTKFacingDirection::Left:  Offset = -MovementRightVector; break;
-	case EPTKFacingDirection::Right: Offset =  MovementRightVector; break;
-	case EPTKFacingDirection::Up:    Offset =  MovementUpVector;    break;
+	case EPTKFacingDirection::Left:  return -MovementRightVector;
+	case EPTKFacingDirection::Right: return  MovementRightVector;
+	case EPTKFacingDirection::Up:    return  MovementUpVector;
 	case EPTKFacingDirection::Down:
-	default:                         Offset = -MovementUpVector;    break;
+	default:                         return -MovementUpVector;
 	}
-	return GetActorLocation() + Offset * GetAttackHitDistance();
+}
+
+FVector APTKTopDownCharacter::GetAttackHitCentre() const
+{
+	// The melee test sits in FRONT of the character, in the direction it faces.
+	return GetActorLocation() + GetFacingWorldDirection() * GetAttackHitDistance();
+}
+
+bool APTKTopDownCharacter::IsRangedAttacker() const
+{
+	return ProjectileClass != nullptr;
+}
+
+void APTKTopDownCharacter::ExecuteAttackImpact()
+{
+	if (ProjectileClass)
+	{
+		FireProjectile();
+		return;
+	}
+	PerformAttackHit();
+}
+
+void APTKTopDownCharacter::FireProjectile()
+{
+	UWorld* const World = GetWorld();
+	if (!World || !ProjectileClass)
+	{
+		return;
+	}
+
+	// The same direction the melee sphere would have used - one shared source
+	// of truth, so a shot can never disagree with the facing on screen.
+	const FVector Aim = GetFacingWorldDirection();
+
+	// On the character's OWN row, with no vertical offset - exactly where
+	// GetAttackHitCentre() puts the melee sphere. Every gameplay footprint in
+	// this game sits at the actor row; a projectile spawned at bow height flew
+	// on a row 70 units above everything it was aimed at and could not hit an
+	// enemy standing level with the shooter. MuzzleHeightOffset now lifts only
+	// the projectile's SPRITE, which is what made the shot read correctly in
+	// the first place.
+	const FVector Muzzle = GetActorLocation() + Aim * MuzzleForwardOffset;
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.Instigator = this;
+	// Always spawn: an arrow loosed with its nose inside a body is still a shot
+	// that happened, and refusing to spawn would silently eat the attack.
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	APTKProjectile* const Shot = World->SpawnActor<APTKProjectile>(
+		ProjectileClass, Muzzle, FRotator::ZeroRotator, Params);
+	if (!Shot)
+	{
+		UE_LOG(LogPTK, Warning, TEXT("%s failed to spawn a projectile"), *GetName());
+		return;
+	}
+
+	// Range is this character's own reach, not a number the projectile keeps
+	// for itself, so a ranged character's threat distance is still the single
+	// AttackRangeTiles value that the AI and the debug ring also read.
+	Shot->Launch(Aim, FacingDirection, this, Team, AttackDamage,
+		ProjectileSpeed, GetAttackReach(), MuzzleHeightOffset, MovementUpVector);
 }
 
 void APTKTopDownCharacter::PerformAttackHit()
@@ -1007,6 +1190,10 @@ void APTKTopDownCharacter::HandleDeath(AActor* Killer)
 	{
 		return;
 	}
+
+	// Drop the shield first: dying mid-block must not leave a corpse immune,
+	// and EndDefend() only clears the state when it is still Defend.
+	EndDefend();
 
 	MovementState = EPTKMovementState::Dead;
 	MoveInput = FVector2D::ZeroVector;

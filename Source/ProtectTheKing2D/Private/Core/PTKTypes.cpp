@@ -104,6 +104,7 @@ FString UPTKTypesLibrary::MovementStateToString(EPTKMovementState State)
 	case EPTKMovementState::Walk:   return TEXT("Walk");
 	case EPTKMovementState::Attack: return TEXT("Attack");
 	case EPTKMovementState::Dead:   return TEXT("Dead");
+	case EPTKMovementState::Defend: return TEXT("Defend");
 	case EPTKMovementState::Idle:
 	default:                        return TEXT("Idle");
 	}

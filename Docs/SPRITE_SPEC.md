@@ -37,10 +37,29 @@ character whose feet moved between animations would visibly hop.
 | Ravager, Swarm Node | idle, walk, attack | 192 × 192 | (96, 179) | baseline |
 | Ravager, Swarm Node | death | 192 × 208 | (96, 179) | a corpse settles **below** the line its feet stood on — Ravager's axe drops flat and reaches 17 px under the standing feet row, against the 12 px a 192-tall canvas leaves. The 16 px is added to the BOTTOM only. |
 | **King** | all five states | **192 × 232** | **(96, 208)** | his power cast throws a starburst **195 px above** his feet, and his death collapse reaches 15 px below. One canvas is used for every King state so the sprite never changes size mid-fight. |
+| Aegis, Wraith | idle, walk, attack, death | 192 × 192 | (96, 179) | baseline. Aegis's raised mace and Wraith's drawn bow both clear it — measured worst case is 118 px above the feet against the 179 available. Their weight is in width, not height. |
+| **Wraith's arrow** | flight, impact | **129 × 129** | **(64, 64)** | a projectile is the one thing in this project that does **not** pivot on its feet — it has none. See below. |
 
 The King's frames are the tallest in the project and use the most headroom of
 anyone; he still only needs 47 px either side of the pivot, so the shared 192
 width is mostly margin for him.
+
+### Projectiles pivot on their centre, on an odd-sized square
+
+A character pivots on its feet because that is what makes it stand on a point.
+A projectile pivots on its **centre**, so that the actor location *is* the
+arrow — which is what keeps the flight sweep, the impact position and the drawn
+sprite agreeing with one another.
+
+The canvas is **square and odd-sized** (129, not 128) on purpose. An odd size
+has a true centre pixel, and that is what lets the four directions be **exact
+90-degree rotations** of a single drawing: a lossless index permutation, baked
+at extraction time by `Tools/ExtractWraithAnimations.py`. Rotating the sprite
+component at runtime instead would resample pixel art, and mirroring it would
+be wrong for any projectile that is not symmetric about its own axis.
+
+The impact burst is **non-directional** — it is radial, so one set of frames
+serves every direction, centred on its own bright core rather than on the cell.
 
 ### Why 192 × 192
 

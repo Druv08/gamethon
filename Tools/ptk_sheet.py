@@ -137,7 +137,8 @@ def ground_anchor(body, w, h, min_run=None):
 # Sampling
 # ---------------------------------------------------------------------------
 def render_frame(sheet, origin_x, origin_y, cell_w, cell_h,
-                 anchor_x, anchor_y, scale, canvas, pivot, fence_fraction=0.66):
+                 anchor_x, anchor_y, scale, canvas, pivot, fence_fraction=0.66,
+                 x_bounds=None):
     """
     Renders one finished frame by mapping every destination pixel back into the
     sheet and area-averaging the source box it covers.
@@ -152,6 +153,13 @@ def render_frame(sheet, origin_x, origin_y, cell_w, cell_h,
     far needs more vertical reach than the cell already provides, and allowing
     it would pull in the row above.
 
+    `x_bounds` is an optional hard (lo, hi) clamp in sheet coordinates, for
+    sheets drawn so tightly that the fence still reaches a neighbour. Bounding
+    to the cell makes foreign content impossible rather than merely unlikely,
+    which is what lets a caller then reason about the leftovers by colour -
+    see Wraith, whose bow detaches on one frame and whose released arrow has to
+    go. Default None keeps the original behaviour byte-for-byte.
+
     Colour is averaged premultiplied, so transparent background can never bleed
     a dark fringe into the silhouette edge.
     """
@@ -163,6 +171,9 @@ def render_frame(sheet, origin_x, origin_y, cell_w, cell_h,
 
     x_lo = max(0, int(abs_x - fence))
     x_hi = min(sheet.width, int(abs_x + fence) + 1)
+    if x_bounds is not None:
+        x_lo = max(x_lo, x_bounds[0])
+        x_hi = min(x_hi, x_bounds[1])
     y_lo = origin_y
     y_hi = min(sheet.height, origin_y + cell_h)
 
@@ -256,6 +267,121 @@ def keep_connected(img, seed_xy):
         if solid[k] and not seen[k]:
             px[k * 4 + 3] = 0
     return total - kept
+
+
+def clean_islands(img, seed_xy, is_effect, max_gap=8, drop_effect=False):
+    """
+    Removes strays without removing the character's own detached gear.
+    Returns pixels discarded.
+
+    keep_connected() is the blunt version of this: it deletes everything not
+    joined to the seed. That is right when the only possible stray is a
+    neighbour's spill, but wrong the moment a character's own art legitimately
+    separates - Wraith's bow parts from his arm by a pixel on the frame after
+    release, and a strict flood erases the bow.
+
+    Two questions are asked of every island that does not hold the seed:
+
+      how far is it?   Sheets whose frames overlap leave a slice of the
+                       NEIGHBOUR inside this cell, where clamping the sampler
+                       cannot reach it. Anything more than `max_gap` from the
+                       character is not his.
+
+      what colour?     With `drop_effect`, a detached BRIGHT island is a fired
+                       projectile that the game is about to spawn for real and
+                       must not also be drawn; a detached DARK island is his
+                       own gear and stays. Off by default, so a death dissolve
+                       keeps its sparks.
+
+    Distance is true pixel distance, not bounding-box distance: a drawn bow
+    stretches the character's box far to one side, and a box test would then
+    call the neighbour's cape "close" because it happens to sit beside the bow.
+    It is measured by growing a front outwards from the character for `max_gap`
+    steps and seeing what it reaches.
+    """
+    w, h, px = img.width, img.height, img.px
+    solid = [px[i * 4 + 3] > 0 for i in range(w * h)]
+    if not any(solid):
+        return 0
+
+    sx, sy = seed_xy
+    if not (0 <= sx < w and 0 <= sy < h and solid[sy * w + sx]):
+        found = None
+        for dy in range(h):
+            for cand in (sy - dy, sy + dy):
+                if 0 <= cand < h and solid[cand * w + sx]:
+                    found = (sx, cand)
+                    break
+            if found:
+                break
+        if not found:
+            return 0
+        sx, sy = found
+
+    seen = bytearray(w * h)
+    islands = []
+    seed_box = None
+    seed_set = set()
+    for start in range(w * h):
+        if not solid[start] or seen[start]:
+            continue
+        queue = deque([start])
+        seen[start] = 1
+        island = []
+        holds_seed = False
+        while queue:
+            k = queue.popleft()
+            island.append(k)
+            if k == sy * w + sx:
+                holds_seed = True
+            x, y = k % w, k // w
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < w and 0 <= ny < h:
+                    j = ny * w + nx
+                    if solid[j] and not seen[j]:
+                        seen[j] = 1
+                        queue.append(j)
+        xs = [k % w for k in island]
+        ys = [k // w for k in island]
+        box = (min(xs), max(xs), min(ys), max(ys))
+        if holds_seed:
+            seed_box = box
+            seed_set = set(island)
+        else:
+            islands.append((island, box))
+
+    if seed_box is None:
+        return 0
+
+    # Grow a front out of the character for max_gap steps, through anything.
+    near = bytearray(w * h)
+    front = [k for k in range(w * h) if seen[k] and solid[k] and k in seed_set]
+    for k in front:
+        near[k] = 1
+    for _ in range(max_gap):
+        nxt = []
+        for k in front:
+            x, y = k % w, k // w
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < w and 0 <= ny < h:
+                    j = ny * w + nx
+                    if not near[j]:
+                        near[j] = 1
+                        nxt.append(j)
+        front = nxt
+
+    dropped = 0
+    for island, box in islands:
+        remove = not any(near[k] for k in island)
+        if not remove and drop_effect:
+            effect = sum(1 for k in island
+                         if is_effect(px[k * 4], px[k * 4 + 1], px[k * 4 + 2]))
+            remove = effect >= len(island) * 0.5
+        if remove:
+            for k in island:
+                px[k * 4 + 3] = 0
+            dropped += len(island)
+    return dropped
 
 
 def border_contact(img):

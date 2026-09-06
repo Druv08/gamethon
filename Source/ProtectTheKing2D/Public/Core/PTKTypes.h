@@ -43,7 +43,15 @@ enum class EPTKMovementState : uint8
 	Idle	UMETA(DisplayName = "Idle"),
 	Walk	UMETA(DisplayName = "Walk"),
 	Attack	UMETA(DisplayName = "Attack"),
-	Dead	UMETA(DisplayName = "Dead")
+	Dead	UMETA(DisplayName = "Dead"),
+	/**
+	 * Braced behind a shield. Appended last so every value above keeps the
+	 * number it already had and no saved Blueprint default changes meaning.
+	 *
+	 * Only a character given defence art ever enters it - see
+	 * APTKTopDownCharacter::DefendFlipbooks. Today that is Aegis alone.
+	 */
+	Defend	UMETA(DisplayName = "Defend")
 };
 
 /**

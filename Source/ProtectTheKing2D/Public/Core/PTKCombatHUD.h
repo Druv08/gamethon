@@ -90,11 +90,47 @@ public:
 	UFUNCTION(Exec)
 	void PTKGuardAttack(int32 Count = 1, float Interval = 1.2f, float StartDelay = 0.0f);
 
+	/**
+	 * Feeds movement input to the played guard for Duration seconds.
+	 *
+	 * X = screen right, Y = screen up, so (0,-1) walks down the screen. Goes
+	 * through SetMoveInput, which is the same path the player's own input
+	 * takes - this drives the character, it does not simulate around it.
+	 * Manual only; exists so all four directional cycles can be checked
+	 * without a human holding a key.
+	 */
+	UFUNCTION(Exec)
+	void PTKGuardMove(float X, float Y, float Duration = 2.0f, float StartDelay = 0.0f);
+
 	/** Turns the King's health heartbeat on (1) or off (0). */
 	UFUNCTION(Exec)
 	void PTKKingHeartbeat(int32 bEnabled = 1);
 
+	/**
+	 * Swaps the played character to another guard Blueprint. Manual only.
+	 *
+	 * Guard switching is a later phase; this is the smallest thing that can
+	 * prove a new guard actually plays. It spawns the requested guard where the
+	 * current one stands, possesses it, and removes the old one so exactly one
+	 * living guard remains - which keeps enemy targeting unambiguous.
+	 *
+	 * Nothing about the GameMode or DefaultPawnClass is touched, so the next
+	 * Play starts as Ravager exactly as before.
+	 */
+	UFUNCTION(Exec)
+	void PTKPlayGuard(const FString& GuardName = TEXT("Aegis"));
+
 	/** Kills the player guard outright, to test what the enemies do next. */
+	/**
+	 * Raises the played guard's shield, `Count` times, `Interval` apart.
+	 *
+	 * The same entry point the Defend key uses, so a scripted test exercises the
+	 * real skill rather than a parallel one. Does nothing for a guard with no
+	 * defence art.
+	 */
+	UFUNCTION(Exec)
+	void PTKGuardDefend(int32 Count = 1, float Interval = 1.5f, float StartDelay = 0.0f);
+
 	UFUNCTION(Exec)
 	void PTKGuardKill(float Delay = 0.0f);
 
@@ -154,6 +190,9 @@ protected:
 	void DrawDebugPanel(APTKTopDownCharacter* Player);
 
 	/** Centred banner shown once the player is dead. */
+	/** Name of the guard currently being played, upper-cased for the panel. */
+	FString PlayerLabel(APTKTopDownCharacter* Player) const;
+
 	void DrawDefeatBanner();
 
 	/** Centred banner shown once the King is dead. */

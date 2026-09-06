@@ -84,6 +84,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PTK|Health")
 	float ApplyDamage(float Amount, AActor* DamageInstigator);
 
+	/**
+	 * While immune, ApplyDamage absorbs everything and returns 0.
+	 *
+	 * This sits in the health component rather than in the character because
+	 * ApplyDamage is the ONE place damage can enter - melee, projectile splash
+	 * and the engine's own damage pipeline all funnel through it. A guard in
+	 * any single caller would block that caller and leave the others open.
+	 *
+	 * It does not make the owner untargetable: enemies still choose him, still
+	 * swing at him, and still find nothing to take. Nor does it heal - it only
+	 * stops the next hit landing.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Health")
+	void SetDamageImmune(bool bImmune);
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Health")
+	bool IsDamageImmune() const { return bDamageImmune; }
+
 	/** Restores health without ever exceeding MaxHealth. Ignored when dead. */
 	UFUNCTION(BlueprintCallable, Category = "PTK|Health")
 	float Heal(float Amount, AActor* Healer = nullptr);
@@ -115,6 +133,9 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Health")
 	bool bDead = false;
+	
+	/** True while a defensive skill is absorbing every hit. */
+	bool bDamageImmune = false;
 
 	/** Bridges the engine damage pipeline into ApplyDamage. */
 	UFUNCTION()

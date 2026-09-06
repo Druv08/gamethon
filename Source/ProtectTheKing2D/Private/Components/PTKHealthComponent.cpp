@@ -57,6 +57,16 @@ float UPTKHealthComponent::ApplyDamage(float Amount, AActor* DamageInstigator)
 		return 0.0f;
 	}
 
+	// Absorbed entirely - health does not change, so nothing is broadcast and no
+	// hit reaction, death check or damage number can fire off a blocked blow.
+	if (bDamageImmune)
+	{
+		UE_LOG(LogPTK, Log, TEXT("DAMAGE BLOCKED | %s | %.1f from %s absorbed | HP %.0f/%.0f"),
+			*GetNameSafe(GetOwner()), Amount, *GetNameSafe(DamageInstigator),
+			CurrentHealth, MaxHealth);
+		return 0.0f;
+	}
+
 	const float Applied = FMath::Min(Amount, CurrentHealth);
 	CurrentHealth = FMath::Max(0.0f, CurrentHealth - Amount);
 
@@ -107,4 +117,16 @@ void UPTKHealthComponent::SetMaxHealth(float NewMax)
 	MaxHealth = FMath::Max(1.0f, NewMax);
 	CurrentHealth = MaxHealth;
 	bDead = false;
+}
+
+void UPTKHealthComponent::SetDamageImmune(bool bImmune)
+{
+	if (bDamageImmune == bImmune)
+	{
+		return;
+	}
+	bDamageImmune = bImmune;
+	UE_LOG(LogPTK, Log, TEXT("DEFENCE %s | %s | HP %.0f/%.0f"),
+		bImmune ? TEXT("UP") : TEXT("DOWN"), *GetNameSafe(GetOwner()),
+		CurrentHealth, MaxHealth);
 }

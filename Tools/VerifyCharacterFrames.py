@@ -44,6 +44,29 @@ CHARACTERS = {
         # Ravager's armour is dark; his energy is blue.
         effect=lambda r, g, b: b > 140 and b - r > 70,
     ),
+    "Aegis": dict(
+        root=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Aegis", "Frames"),
+        canvas=(192, 192), pivot=(96, 179),
+        # Defend is his shield brace - a one-shot action like Attack, so it is
+        # allowed to travel and is not listed under holdstill.
+        animations=(("Idle", 1), ("Walk", 8), ("Attack", 8), ("Defend", 8),
+                    ("Death", 8)),
+        nondirectional=("Death",),
+        holdstill=("Walk",),
+        # Shield emblem, mace head and swing arcs. His armour is dark steel, so
+        # none of his body reads as energy.
+        effect=lambda r, g, b: b > 150 and b - r > 80,
+    ),
+    "Wraith": dict(
+        root=os.path.join(PROJECT, "ArtSource", "Characters", "Guards", "Wraith", "Frames"),
+        canvas=(192, 192), pivot=(96, 179),
+        animations=(("Idle", 1), ("Walk", 8), ("Attack", 8), ("Death", 8)),
+        nondirectional=("Death",),
+        holdstill=("Walk",),
+        # Hood eye, chest gems and the nocked arrow. Wraith is blue head to
+        # foot, so this has to sit above his cloak, which tops out near b=120.
+        effect=lambda r, g, b: b > 150 and b - r > 80,
+    ),
     "SwarmNode": dict(
         root=os.path.join(PROJECT, "ArtSource", "Characters", "Enemies", "SwarmNode", "Frames"),
         canvas=(192, 192), pivot=(96, 179),

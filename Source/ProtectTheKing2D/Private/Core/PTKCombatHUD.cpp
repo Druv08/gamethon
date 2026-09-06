@@ -3,6 +3,7 @@
 #include "Core/PTKCombatHUD.h"
 
 #include "Characters/PTKEnemyCharacter.h"
+#include "Characters/PTKGuardCharacter.h"
 #include "Characters/PTKKingCharacter.h"
 #include "Characters/PTKTopDownCharacter.h"
 #include "Components/PTKHealthComponent.h"
@@ -66,7 +67,7 @@ void APTKCombatHUD::DrawPlayerPanel(APTKTopDownCharacter* Player)
 		? PTKHUDColours::PlayerLow
 		: PTKHUDColours::PlayerFill;
 
-	DrawText(TEXT("RAVAGER"), PTKHUDColours::Text, X, Y - 20.0f, GEngine->GetMediumFont());
+	DrawText(PlayerLabel(Player), PTKHUDColours::Text, X, Y - 20.0f, GEngine->GetMediumFont());
 	DrawBar(X, Y, PlayerBarWidth, PlayerBarHeight, Fraction, Fill);
 
 	const FString Numbers = FString::Printf(TEXT("%.0f / %.0f"),
@@ -118,7 +119,10 @@ void APTKCombatHUD::DrawDebugPanel(APTKTopDownCharacter* Player)
 	if (Player)
 	{
 		UPTKHealthComponent* const Health = Player->GetHealthComponent();
-		DrawText(FString::Printf(TEXT("Ravager    HP %.0f/%.0f   %s   facing %s"),
+		// Named from the pawn, not hard-coded: with more than one guard in the
+		// project a fixed label would quietly lie about who is being played.
+		DrawText(FString::Printf(TEXT("%-10s HP %.0f/%.0f   %s   facing %s"),
+			*Player->GetClass()->GetName().Replace(TEXT("BP_"), TEXT("")).Replace(TEXT("_C"), TEXT("")),
 			Health ? Health->GetCurrentHealth() : 0.0f,
 			Health ? Health->GetMaxHealth() : 0.0f,
 			*UPTKTypesLibrary::MovementStateToString(Player->GetMovementState()),
@@ -155,9 +159,30 @@ void APTKCombatHUD::DrawDebugPanel(APTKTopDownCharacter* Player)
 	}
 }
 
+FString APTKCombatHUD::PlayerLabel(APTKTopDownCharacter* Player) const
+{
+	// Whoever is actually being played, not whoever was being played when this
+	// HUD was written. PTKPlayGuard can put Aegis or Wraith behind the same
+	// bar, and a panel that still said RAVAGER would be reporting the wrong
+	// character's health to the player.
+	if (const APTKGuardCharacter* const Guard = Cast<APTKGuardCharacter>(Player))
+	{
+		if (!Guard->GetGuardDisplayName().IsEmpty())
+		{
+			return Guard->GetGuardDisplayName().ToString().ToUpper();
+		}
+		if (!Guard->GetGuardId().IsNone())
+		{
+			return Guard->GetGuardId().ToString().ToUpper();
+		}
+	}
+	return TEXT("GUARD");
+}
+
 void APTKCombatHUD::DrawDefeatBanner()
 {
-	const FString Message = TEXT("RAVAGER DEFEATED");
+	const FString Message = PlayerLabel(
+		Cast<APTKTopDownCharacter>(UGameplayStatics::GetPlayerPawn(this, 0))) + TEXT(" DEFEATED");
 	float W = 0.0f;
 	float H = 0.0f;
 	GetTextSize(Message, W, H, GEngine->GetLargeFont());
@@ -221,6 +246,128 @@ void APTKCombatHUD::DrawKingDefeatBanner()
 
 	DrawRect(PTKHUDColours::Backdrop, X - 24.0f, Y - 14.0f, W + 48.0f, H + 28.0f);
 	DrawText(Message, PTKHUDColours::KingGold, X, Y, GEngine->GetLargeFont());
+}
+
+void APTKCombatHUD::PTKGuardMove(float X, float Y, float Duration, float StartDelay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FVector2D Input(X, Y);
+	const float End = FMath::Max(Duration, 0.05f);
+
+	// Movement input is consumed every frame, so it has to be re-applied every
+	// frame for the whole window - a single call would move him for one tick.
+	TSharedPtr<float> Elapsed = MakeShared<float>(0.0f);
+	TSharedPtr<FTimerHandle> Repeat = MakeShared<FTimerHandle>();
+
+	FTimerHandle Start;
+	World->GetTimerManager().SetTimer(Start,
+		FTimerDelegate::CreateWeakLambda(this, [this, Input, End, Elapsed, Repeat]()
+		{
+			UWorld* const W = GetWorld();
+			if (!W) { return; }
+			UE_LOG(LogPTK, Warning, TEXT("PTKGuardMove: input (%.0f, %.0f) for %.1fs"),
+				Input.X, Input.Y, End);
+			W->GetTimerManager().SetTimer(*Repeat,
+				FTimerDelegate::CreateWeakLambda(this, [this, Input, End, Elapsed, Repeat]()
+				{
+					UWorld* const W2 = GetWorld();
+					if (!W2) { return; }
+					*Elapsed += 0.016f;
+					APTKTopDownCharacter* const Guard =
+						Cast<APTKTopDownCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+					if (Guard && *Elapsed < End)
+					{
+						Guard->SetMoveInput(Input);
+					}
+					else
+					{
+						if (Guard) { Guard->SetMoveInput(FVector2D::ZeroVector); }
+						W2->GetTimerManager().ClearTimer(*Repeat);
+					}
+				}), 0.016f, true);
+		}), FMath::Max(StartDelay, 0.01f), false);
+}
+
+void APTKCombatHUD::PTKPlayGuard(const FString& GuardName)
+{
+	UWorld* const World = GetWorld();
+	APlayerController* const PC = GetOwningPlayerController();
+	if (!World || !PC)
+	{
+		return;
+	}
+
+	const FString Path = FString::Printf(
+		TEXT("/Game/PTK/Characters/Guards/%s/Blueprints/BP_%s.BP_%s_C"),
+		*GuardName, *GuardName, *GuardName);
+	UClass* const GuardClass = LoadClass<APTKTopDownCharacter>(nullptr, *Path);
+	if (!GuardClass)
+	{
+		UE_LOG(LogPTK, Error, TEXT("PTKPlayGuard: no guard Blueprint at %s"), *Path);
+		return;
+	}
+
+	APawn* const Old = PC->GetPawn();
+	const FTransform Where = Old ? Old->GetActorTransform() : FTransform::Identity;
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+	APTKTopDownCharacter* const Guard =
+		World->SpawnActor<APTKTopDownCharacter>(GuardClass, Where, Params);
+	if (!Guard)
+	{
+		UE_LOG(LogPTK, Error, TEXT("PTKPlayGuard: could not spawn %s"), *GuardName);
+		return;
+	}
+
+	PC->UnPossess();
+	PC->Possess(Guard);
+
+	// The previous guard must go, not merely be un-possessed: enemies pick the
+	// nearest LIVING guard, so leaving Ravager standing there would quietly
+	// make this a two-guard test.
+	if (Old)
+	{
+		Old->Destroy();
+	}
+
+	UE_LOG(LogPTK, Warning, TEXT("PTKPlayGuard: now playing %s"), *Guard->GetName());
+}
+
+void APTKCombatHUD::PTKGuardDefend(int32 Count, float Interval, float StartDelay)
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	Count = FMath::Clamp(Count, 1, 60);
+	Interval = FMath::Max(Interval, 0.1f);
+
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FTimerHandle Handle;
+		World->GetTimerManager().SetTimer(Handle,
+			FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				APTKTopDownCharacter* const Player =
+					Cast<APTKTopDownCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+				if (Player)
+				{
+					Player->StartDefend();
+				}
+			}), FMath::Max(StartDelay + i * Interval, 0.01f), false);
+	}
+
+	UE_LOG(LogPTK, Warning, TEXT("PTKGuardDefend: %d block(s), every %.1fs, starting at +%.1fs"),
+		Count, Interval, StartDelay);
 }
 
 void APTKCombatHUD::PTKGuardKill(float Delay)

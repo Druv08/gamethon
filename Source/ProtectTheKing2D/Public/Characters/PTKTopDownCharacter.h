@@ -9,6 +9,7 @@
 #include "Core/PTKTypes.h"
 #include "PTKTopDownCharacter.generated.h"
 
+class APTKProjectile;
 class UCameraComponent;
 class UInputAction;
 class UPTKHealthComponent;
@@ -110,6 +111,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|State")
 	bool IsAttacking() const { return MovementState == EPTKMovementState::Attack; }
 
+	/** True while the shield is up and damage is being absorbed. */
+	UFUNCTION(BlueprintPure, Category = "PTK|State")
+	bool IsDefending() const { return MovementState == EPTKMovementState::Defend; }
+
+	/**
+	 * Raises the shield for the length of the defence animation.
+	 *
+	 * Blocks EVERY point of incoming damage until it ends, then hands the
+	 * character straight back to normal play. Refused while dead, while already
+	 * defending, mid-attack, or by any character with no defence art - which is
+	 * everyone except Aegis today, so this costs the others nothing.
+	 *
+	 * Returns true if a defence actually started.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Combat")
+	bool StartDefend();
+
 	/**
 	 * Begins an attack in the current facing direction.
 	 *
@@ -146,9 +164,30 @@ public:
 	 */
 	virtual bool IsValidAttackVictim(const AActor* Victim) const;
 
+	/**
+	 * Unit world direction the character currently faces on screen.
+	 *
+	 * The ONE place facing is turned into a world vector. Both the melee sphere
+	 * and the projectile launch go through it, so a ranged attack cannot
+	 * re-derive the axes and get them wrong: screen-right is not +X in this
+	 * project, and the basis is asked of the camera rather than assumed. See
+	 * the world convention block at the top of this file.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	FVector GetFacingWorldDirection() const;
+
 	/** Centre of the melee test for the current facing, in world space. */
 	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
 	FVector GetAttackHitCentre() const;
+
+	/**
+	 * True when this character shoots instead of swinging.
+	 *
+	 * Defined in the .cpp: TSubclassOf needs the complete APTKProjectile type
+	 * to validate the class, and this header only forward-declares it.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	bool IsRangedAttacker() const;
 
 	/** How far this character's attack reaches, in world units. */
 	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
@@ -195,6 +234,7 @@ protected:
 	void Input_Move(const FInputActionValue& Value);
 	void Input_MoveCompleted(const FInputActionValue& Value);
 	void Input_Attack(const FInputActionValue& Value);
+	void Input_Defend(const FInputActionValue& Value);
 
 	/**
 	 * Counts the current attack down and releases the state when it finishes.
@@ -203,12 +243,41 @@ protected:
 	bool TickAttack(float DeltaSeconds);
 
 	/**
+	 * Counts the defence down and drops the shield when it finishes.
+	 * Returns true while the brace still owns the character.
+	 */
+	bool TickDefend(float DeltaSeconds);
+
+	/** Ends the defence and restores normal damage. Safe to call at any time. */
+	void EndDefend();
+
+	/**
+	 * Resolves the attack at its impact frame - once per swing, never per tick
+	 * and never on the key press.
+	 *
+	 * This is the fork between the two kinds of attack. A character with a
+	 * ProjectileClass fires; everyone else swings. Splitting here rather than
+	 * inside PerformAttackHit keeps the melee test exactly as it was for
+	 * Ravager and Aegis, and means a ranged character never runs it at all.
+	 */
+	virtual void ExecuteAttackImpact();
+
+	/**
 	 * Runs the melee overlap and damages every hostile inside it.
 	 *
 	 * Called once per swing, at the impact frame - never per tick, and never on
 	 * the key press. Overridden behaviour belongs in Blueprint via OnAttackHit.
 	 */
 	void PerformAttackHit();
+
+	/**
+	 * Spawns and launches one projectile in the current facing direction.
+	 *
+	 * Deals no damage itself: the projectile does, if and when it reaches
+	 * something. Its range is this character's own attack reach, so a ranged
+	 * character's threat distance is still the single AttackRangeTiles number.
+	 */
+	virtual void FireProjectile();
 
 	/** Stops the character, disables collision and enters the Dead state. */
 	UFUNCTION(BlueprintCallable, Category = "PTK|Health")
@@ -286,6 +355,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PTK|Input")
 	TObjectPtr<UInputAction> AttackAction;
 
+	/** IA_Defend - a digital (bool) action. Leave unset for characters with no shield. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PTK|Input")
+	TObjectPtr<UInputAction> DefendAction;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PTK|Input")
 	int32 MappingContextPriority = 0;
 
@@ -357,6 +430,27 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Animation")
 	FPTKDirectionalFlipbooks AttackFlipbooks;
+
+	/**
+	 * The shield brace - one flipbook per direction.
+	 *
+	 * Leaving this empty is what makes the skill Aegis-only: StartDefend()
+	 * refuses outright without art for the current facing, so Ravager and
+	 * Wraith behave exactly as they did before it existed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Animation")
+	FPTKDirectionalFlipbooks DefendFlipbooks;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Animation", meta = (ClampMin = "0.01"))
+	float DefendPlayRate = 1.0f;
+
+	/**
+	 * Fallback duration used only if the defence flipbook reports no length.
+	 * Never hit with valid assets; it exists so a broken import degrades into a
+	 * brief block rather than leaving the character invulnerable forever.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat", meta = (ClampMin = "0.01"))
+	float DefendFallbackDuration = 0.8f;
 
 	/**
 	 * Death collapse - a single non-directional flipbook.
@@ -506,6 +600,46 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat")
 	bool bAttackHitsMultipleTargets = true;
 
+	// ------------------------------------------------------------------
+	// Ranged attack
+	//
+	// The reusable half of "some characters shoot". Leave ProjectileClass
+	// unset and none of this costs anything - Ravager and Aegis are byte for
+	// byte the melee characters they were. Set it and the same swing timing,
+	// facing lock and impact fraction drive a shot instead, which is what a
+	// future ranged Sentinel or enemy archer inherits without new code.
+	// ------------------------------------------------------------------
+
+	/** What to fire. Unset = this character swings instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat|Ranged")
+	TSubclassOf<APTKProjectile> ProjectileClass;
+
+	/** Projectile speed in world units per second. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat|Ranged", meta = (ClampMin = "1.0"))
+	float ProjectileSpeed = 900.0f;
+
+	/**
+	 * How far in front of the character the projectile appears, in world units.
+	 *
+	 * Enough to clear the bow rather than to clear the capsule: spawning it on
+	 * the character's own centre would put the arrow inside him for a frame.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat|Ranged", meta = (ClampMin = "0.0"))
+	float MuzzleForwardOffset = 22.0f;
+
+	/**
+	 * How far up the projectile's SPRITE is drawn, in world units. Visual only.
+	 *
+	 * The actor origin is at the feet, so without this the arrow would look as
+	 * though it were loosed from Wraith's boots. It must never move the
+	 * projectile actor: combat in this game happens on the actor row, and an
+	 * arrow that FLEW at bow height could not hit anything standing level with
+	 * the archer. Both the arrow and its target are drawn up from the same row,
+	 * so lifting the sprite keeps sight and collision agreeing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat|Ranged")
+	float MuzzleHeightOffset = 34.0f;
+
 	/** Seconds the corpse remains before the actor is destroyed. 0 keeps it. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Health", meta = (ClampMin = "0.0"))
 	float DestroyDelayAfterDeath = 2.0f;
@@ -601,6 +735,14 @@ protected:
 	/** Seconds left on the current attack. Zero when not attacking. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|State")
 	float AttackTimeRemaining = 0.0f;
+
+	/** Seconds left on the current defence. Zero when not defending. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|State")
+	float DefendTimeRemaining = 0.0f;
+
+	/** Facing captured when the brace began; held for its whole duration. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|State")
+	EPTKFacingDirection DefendFacingDirection = EPTKFacingDirection::Down;
 
 	/** Facing captured when the attack began; held while bLockFacingDuringAttack. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|State")
