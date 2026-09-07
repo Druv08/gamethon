@@ -11,7 +11,7 @@ class APTKEnemyCharacter;
 /**
  * APTKEnemySpawner
  * ================
- * Drops N enemies into the arena at BeginPlay so combat can be stress-tested.
+ * Drops N enemies into the arena on game start so combat can be stress-tested.
  *
  * This is a DEVELOPMENT TOOL, not the wave system. There are no rounds, no
  * timers, no budgets, no difficulty curve and no respawning - it exists so that
@@ -33,6 +33,7 @@ public:
 	APTKEnemySpawner();
 
 	virtual void BeginPlay() override;
+	void StartSpawning();
 
 	/** Spawns SpawnCount enemies. Returns how many actually reached the world. */
 	UFUNCTION(BlueprintCallable, Category = "PTK|Spawner")
@@ -55,6 +56,7 @@ protected:
 	int32 SpawnCount = 10;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Spawner")
+	// Retained for map serialization; automatic spawning now waits for StartGame.
 	bool bSpawnOnBeginPlay = true;
 
 	/** Radius of the innermost ring, in world units. */

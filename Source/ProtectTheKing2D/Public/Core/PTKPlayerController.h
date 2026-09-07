@@ -12,6 +12,7 @@ class APTKGuardCharacter;
 class UInputAction;
 class UInputMappingContext;
 class UPTKHealthComponent;
+class UPTKStartScreen;
 
 /**
  * APTKPlayerController
@@ -67,6 +68,7 @@ class PROTECTTHEKING2D_API APTKPlayerController : public APlayerController
 
 public:
 	APTKPlayerController();
+	void HideStartScreen();
 
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -168,6 +170,14 @@ protected:
 	int32 SwitchMappingPriority = 1;
 
 private:
+	void Input_StartGame();
+	UPROPERTY()
+	TObjectPtr<UInputAction> StartAction;
+	UPROPERTY()
+	TObjectPtr<UInputMappingContext> StartMappingContext;
+	UPROPERTY()
+	TObjectPtr<UPTKStartScreen> StartScreen;
+
 	/**
 	 * GuardId -> the AI controller that was driving it when the player took over.
 	 *

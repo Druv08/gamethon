@@ -1,6 +1,7 @@
 // Protect the King - 2D. The one guard AI.
 
 #include "AI/PTKGuardAIController.h"
+#include "Core/PTKGameModeBase.h"
 
 #include "Characters/PTKGuardCharacter.h"
 #include "Combat/PTKCombatTarget.h"
@@ -86,6 +87,8 @@ void APTKGuardAIController::SetAIEnabled(bool bEnabled)
 void APTKGuardAIController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	if (!APTKGameModeBase::IsGameplayActive(GetWorld())) return;
 
 	APTKGuardCharacter* const Guard = Cast<APTKGuardCharacter>(GetPawn());
 	if (!Guard)

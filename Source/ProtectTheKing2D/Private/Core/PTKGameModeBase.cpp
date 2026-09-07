@@ -1,6 +1,9 @@
 // Protect the King - 2D. Base game mode.
 
 #include "Core/PTKGameModeBase.h"
+#include "Core/PTKEnemySpawner.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
 
 #include "Core/PTKCombatHUD.h"
 #include "Core/PTKPlayerController.h"
@@ -39,4 +42,25 @@ APTKGameModeBase::APTKGameModeBase()
 			TEXT("BP_Ravager was not found at /Game/PTK/Characters/Guards/Ravager/Blueprints/BP_Ravager. ")
 			TEXT("Run Tools/PTK_GenerateAssets.py, then set DefaultPawnClass."));
 	}
+}
+
+bool APTKGameModeBase::IsGameplayActive(const UWorld* World)
+{
+	const APTKGameModeBase* Mode = World ? World->GetAuthGameMode<APTKGameModeBase>() : nullptr;
+	return Mode && Mode->IsPlaying();
+}
+
+void APTKGameModeBase::StartGame()
+{
+	if (bPlaying) return;
+	bPlaying = true;
+	for (TActorIterator<APTKPlayerController> It(GetWorld()); It; ++It)
+	{
+		It->HideStartScreen();
+	}
+	for (TActorIterator<APTKEnemySpawner> It(GetWorld()); It; ++It)
+	{
+		It->StartSpawning();
+	}
+	UE_LOG(LogPTK, Log, TEXT("GAME START | Playing"));
 }

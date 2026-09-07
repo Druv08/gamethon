@@ -9,10 +9,7 @@
 /**
  * APTKGameModeBase
  * ================
- * Minimal game mode for the Phase 1 movement prototype.
- *
- * It only resolves a default pawn. Round logic, wave spawning, scoring and
- * the King objective are explicitly out of scope until movement is signed off.
+ * Owns the one-way WaitingToStart -> Playing transition in the gameplay map.
  */
 UCLASS()
 class PROTECTTHEKING2D_API APTKGameModeBase : public AGameModeBase
@@ -21,4 +18,16 @@ class PROTECTTHEKING2D_API APTKGameModeBase : public AGameModeBase
 
 public:
 	APTKGameModeBase();
+
+	UFUNCTION(BlueprintCallable, Category = "PTK|Start")
+	void StartGame();
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Start")
+	bool IsPlaying() const { return bPlaying; }
+
+	static bool IsGameplayActive(const UWorld* World);
+
+private:
+	UPROPERTY(VisibleInstanceOnly, Category = "PTK|Start")
+	bool bPlaying = false;
 };

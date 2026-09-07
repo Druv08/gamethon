@@ -24,7 +24,9 @@ public class ProtectTheKing2D : ModuleRules
 			"AIModule",
 
 			// Enhanced Input: IA_Move (Axis2D), IMC_PTK_Default.
-			"EnhancedInput"
+			"EnhancedInput",
+			"UMG",
+			"SlateCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

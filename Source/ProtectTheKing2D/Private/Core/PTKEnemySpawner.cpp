@@ -1,6 +1,7 @@
 // Protect the King - 2D. Development enemy spawner.
 
 #include "Core/PTKEnemySpawner.h"
+#include "Core/PTKGameModeBase.h"
 
 #include "Characters/PTKEnemyCharacter.h"
 #include "DrawDebugHelpers.h"
@@ -18,6 +19,11 @@ void APTKEnemySpawner::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (APTKGameModeBase::IsGameplayActive(GetWorld())) StartSpawning();
+}
+
+void APTKEnemySpawner::StartSpawning()
+{
 	if (bSpawnOnBeginPlay)
 	{
 		SpawnWave();
@@ -27,7 +33,7 @@ void APTKEnemySpawner::BeginPlay()
 int32 APTKEnemySpawner::SpawnWave()
 {
 	UWorld* const World = GetWorld();
-	if (!World)
+	if (!APTKGameModeBase::IsGameplayActive(World))
 	{
 		return 0;
 	}

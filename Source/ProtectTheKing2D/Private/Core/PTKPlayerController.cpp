@@ -2,6 +2,10 @@
 // which guard the player is driving.
 
 #include "Core/PTKPlayerController.h"
+#include "Core/PTKGameModeBase.h"
+#include "UI/PTKStartScreen.h"
+#include "InputCoreTypes.h"
+#include "InputTriggers.h"
 
 #include "AI/PTKGuardAIController.h"
 #include "Characters/PTKGuardCharacter.h"
@@ -75,6 +79,19 @@ void APTKPlayerController::BeginPlay()
 
 	AddSwitchMappingContext();
 	LogRoster(TEXT("start"));
+	if (IsLocalController() && !APTKGameModeBase::IsGameplayActive(GetWorld()))
+	{
+		StartScreen = CreateWidget<UPTKStartScreen>(this);
+		if (StartScreen) StartScreen->AddToViewport(100);
+		SetInputMode(FInputModeGameOnly());
+	}
+	if (StartMappingContext)
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+		{
+			Subsystem->AddMappingContext(StartMappingContext, 2);
+		}
+	}
 }
 
 void APTKPlayerController::SetupInputComponent()
@@ -88,6 +105,17 @@ void APTKPlayerController::SetupInputComponent()
 			TEXT("SWITCH | the player controller did not receive a UEnhancedInputComponent - ")
 			TEXT("guard switching is disabled. Check DefaultInputComponentClass in Config/DefaultInput.ini."));
 		return;
+	}
+
+	StartAction = NewObject<UInputAction>(this);
+	StartAction->ValueType = EInputActionValueType::Boolean;
+	StartAction->Triggers.Add(NewObject<UInputTriggerPressed>(StartAction));
+	StartMappingContext = NewObject<UInputMappingContext>(this);
+	StartMappingContext->MapKey(StartAction, EKeys::Enter);
+	EnhancedInput->BindAction(StartAction, ETriggerEvent::Triggered, this, &APTKPlayerController::Input_StartGame);
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+	{
+		Subsystem->AddMappingContext(StartMappingContext, 2);
 	}
 
 	int32 Bound = 0;
@@ -240,6 +268,7 @@ void APTKPlayerController::Input_SelectGuard(int32 Slot)
 
 bool APTKPlayerController::SelectGuardSlot(int32 Slot)
 {
+	if (!APTKGameModeBase::IsGameplayActive(GetWorld())) return false;
 	if (!GuardOrder.IsValidIndex(Slot - 1))
 	{
 		UE_LOG(LogPTK, Warning, TEXT("SWITCH | there is no slot %d"), Slot);
@@ -472,5 +501,22 @@ void APTKPlayerController::LogRoster(const FString& Stage) const
 			*UPTKTypesLibrary::MovementStateToString(Guard->GetMovementState()),
 			*UPTKTypesLibrary::DirectionToString(Guard->GetFacingDirection()),
 			*GetNameSafe(Ctrl));
+	}
+}
+
+void APTKPlayerController::Input_StartGame()
+{
+	if (APTKGameModeBase* Mode = GetWorld()->GetAuthGameMode<APTKGameModeBase>())
+	{
+		Mode->StartGame();
+	}
+}
+
+void APTKPlayerController::HideStartScreen()
+{
+	if (StartScreen)
+	{
+		StartScreen->RemoveFromParent();
+		StartScreen = nullptr;
 	}
 }

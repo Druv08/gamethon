@@ -1,6 +1,7 @@
 // Protect the King - 2D. Reusable Paper2D top-down character base.
 
 #include "Characters/PTKTopDownCharacter.h"
+#include "Core/PTKGameModeBase.h"
 
 #include "Camera/CameraComponent.h"
 #include "Combat/PTKCombatTarget.h"
@@ -366,6 +367,11 @@ void APTKTopDownCharacter::Tick(float DeltaSeconds)
 
 void APTKTopDownCharacter::SetMoveInput(FVector2D NewInput)
 {
+	if (!APTKGameModeBase::IsGameplayActive(GetWorld()))
+	{
+		MoveInput = FVector2D::ZeroVector;
+		return;
+	}
 	// A brace is a stance: he plants his feet behind the shield and holds. The
 	// input is swallowed rather than queued, so releasing the key during a block
 	// cannot make him lurch when it ends.
@@ -543,6 +549,7 @@ void APTKTopDownCharacter::Input_Defend(const FInputActionValue& /*Value*/)
 
 bool APTKTopDownCharacter::StartAttack()
 {
+	if (!APTKGameModeBase::IsGameplayActive(GetWorld())) return false;
 	if (MovementState == EPTKMovementState::Dead
 		|| MovementState == EPTKMovementState::Defend)
 	{
@@ -609,6 +616,7 @@ bool APTKTopDownCharacter::StartAttack()
 
 bool APTKTopDownCharacter::StartDefend()
 {
+	if (!APTKGameModeBase::IsGameplayActive(GetWorld())) return false;
 	if (MovementState == EPTKMovementState::Dead
 		|| MovementState == EPTKMovementState::Defend
 		|| MovementState == EPTKMovementState::Attack)
