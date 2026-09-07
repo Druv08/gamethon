@@ -44,6 +44,7 @@ public:
 
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 	/**
 	 * The post this guard defends - where it stands when nothing is happening.

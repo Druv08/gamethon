@@ -6,9 +6,14 @@
 #include "GameFramework/HUD.h"
 #include "PTKCombatHUD.generated.h"
 
+class APTKBattlefield;
 class APTKEnemyCharacter;
+class APTKGuardBase;
+class APTKGuardCharacter;
 class APTKKingCharacter;
 class APTKTopDownCharacter;
+class APTKWaveManager;
+class UTexture2D;
 
 /**
  * APTKCombatHUD
@@ -210,6 +215,45 @@ public:
 	UFUNCTION(Exec)
 	void PTKSplashTest(float Distance = 200.0f, float StartDelay = 2.0f);
 
+	/** Jumps the wave system to a wave. Manual testing aid. */
+	UFUNCTION(Exec)
+	void PTKWave(int32 Wave = 1);
+
+	/** Logs the wave phase, countdown and remaining enemy count. */
+	UFUNCTION(Exec)
+	void PTKWaveStatus();
+
+	/** Damages a guard base by id, so base destruction can be driven manually. */
+	UFUNCTION(Exec)
+	void PTKBaseDamage(const FString& BaseName = TEXT("Aegis"), float Amount = 500.0f);
+
+	/** Destroys a guard base outright. */
+	UFUNCTION(Exec)
+	void PTKBaseKill(const FString& BaseName = TEXT("Aegis"));
+
+	/** Logs every base's health and destroyed state. */
+	UFUNCTION(Exec)
+	void PTKBases();
+
+	/** Forces the King's emergency power, without having to wound him first. */
+	UFUNCTION(Exec)
+	void PTKKingPower();
+
+	/** Logs what each enemy has chosen to attack and how far away it is. */
+	UFUNCTION(Exec)
+	void PTKTargets(int32 MaxLines = 12);
+
+	/**
+	 * Diagnostic: runs the melee overlap against a base and reports what the
+	 * query returns, plus the nearest enemy's state and reach.
+	 *
+	 * Exists because "the base takes no damage" has several possible causes -
+	 * the query missing it, the victim test rejecting it, or nothing ever
+	 * getting close enough to swing - and they need telling apart.
+	 */
+	UFUNCTION(Exec)
+	void PTKBaseProbe(const FString& BaseName = TEXT("Aegis"));
+
 protected:
 	/** Clears the field and returns the played guard, or null. */
 	APTKTopDownCharacter* ClearFieldForRig();
@@ -276,8 +320,14 @@ protected:
 	/** Centred banner shown once the King is dead. */
 	void DrawKingDefeatBanner();
 
+	/**
+	 * OFF by default now that the roster, wave panel and minimap carry the
+	 * information a player actually needs. The per-enemy state dump was the
+	 * prototype's readout and covers the top-left third of the screen; F1 still
+	 * brings it back for debugging.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
-	bool bShowDebugPanel = true;
+	bool bShowDebugPanel = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
 	float PlayerBarWidth = 280.0f;
@@ -300,4 +350,127 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
 	float KingBarHeight = 16.0f;
+
+	// ==================================================================
+	// The real game HUD: roster, waves, minimap and warnings.
+	//
+	// All of it is canvas drawing, for the reason given at the top of this
+	// file and for one more that matters at scale: the spec asks for a
+	// minimap that shows hordes without a widget per enemy and without a
+	// second rendered world. A canvas pass over a cached actor list is
+	// exactly that - it costs one draw call per marker and needs no
+	// SceneCapture, no render target and no widget tree.
+	// ==================================================================
+
+	/** Roster panel with all five guards, the King, and the selected highlight. */
+	void DrawGuardRoster();
+
+	/** Wave number, enemies remaining, and the intermission countdown. */
+	void DrawWavePanel();
+
+	/** The battlefield overview, top-right. */
+	void DrawMinimap();
+
+	/** One marker on the minimap, in minimap-local pixels. */
+	void DrawMinimapMarker(const FVector2D& Centre, float Size,
+		const FLinearColor& Colour, bool bDiamond = false);
+
+	/** Enemies clustered into horde blips, so a swarm reads as one threat. */
+	void DrawMinimapHordes(const FVector2D& Origin, const FVector2D& Size);
+
+	/**
+	 * Floating names above characters that have left their post.
+	 *
+	 * Hidden at home by design - a guard standing where it belongs needs no
+	 * label, and five permanent nameplates would clutter the field the labels
+	 * exist to clarify.
+	 */
+	void DrawWorldLabels();
+
+	/** Under-attack and incoming-horde banners, rate limited. */
+	void DrawWarnings();
+
+	/** VICTORY / GAME OVER, once the run has ended. */
+	void DrawResultBanner();
+
+	/** Centred text helper: returns the width drawn. */
+	float DrawCentredText(const FString& Text, float CentreX, float Y,
+		const FLinearColor& Colour, float Scale = 1.0f);
+
+	/** Panel background with a border, so text stays readable over the map. */
+	void DrawPanel(float X, float Y, float W, float H, float Alpha = 0.55f);
+
+	/** World point to minimap pixel. */
+	FVector2D WorldToMinimap(const FVector& World, const FVector2D& Origin,
+		const FVector2D& Size) const;
+
+	const APTKBattlefield* GetBattlefield() const;
+	APTKWaveManager* GetWaveManager() const;
+
+	// ------------------------------------------------------------------
+	// Layout
+	// ------------------------------------------------------------------
+
+	/** Minimap width as a fraction of the viewport, so it scales with the window. */
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Minimap", meta = (ClampMin = "0.05", ClampMax = "0.5"))
+	float MinimapWidthFraction = 0.19f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Minimap")
+	float MinimapMargin = 14.0f;
+
+	/** Enemies within this world distance of each other become one blip. */
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Minimap", meta = (ClampMin = "1.0"))
+	float HordeClusterRadius = 420.0f;
+
+	/**
+	 * The battlefield art, drawn as the minimap background.
+	 *
+	 * Left unset by default and resolved on the first draw - see DrawMinimap.
+	 * An asset assigned here wins and is never overwritten.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Minimap")
+	TObjectPtr<UTexture2D> MinimapTexture;
+
+	/** Latches after the first resolve attempt, successful or not. */
+	bool bMinimapTextureResolved = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Roster")
+	float RosterRowHeight = 22.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Roster")
+	float RosterWidth = 216.0f;
+
+	/**
+	 * How far a guard may drift from its post before its name appears.
+	 * Roughly half a tile, as the spec asks.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Labels", meta = (ClampMin = "1.0"))
+	float LabelHomeThreshold = 32.0f;
+
+	/** Seconds a warning banner stays up once raised. */
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Warnings", meta = (ClampMin = "0.1"))
+	float WarningHoldTime = 2.5f;
+
+	/** Minimum gap between two showings of the SAME warning. */
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD|Warnings", meta = (ClampMin = "0.1"))
+	float WarningCooldown = 6.0f;
+
+private:
+	/**
+	 * Live warnings, keyed by text so the same message cannot queue twice.
+	 *
+	 * Keeping the cooldown per MESSAGE rather than one global timer is what
+	 * lets "Aegis base under attack" and "King core under attack" both appear -
+	 * they are different facts, and suppressing the second because the first
+	 * was recent would hide the more urgent one.
+	 */
+	struct FWarningState
+	{
+		float ShownAt = 0.0f;
+		float ExpiresAt = 0.0f;
+	};
+	TMap<FString, FWarningState> Warnings;
+
+	/** Raises a warning if its cooldown has elapsed. */
+	void RaiseWarning(const FString& Text);
 };

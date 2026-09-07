@@ -3,8 +3,11 @@
 #include "Characters/PTKKingCharacter.h"
 
 #include "Characters/PTKEnemyCharacter.h"
+#include "Characters/PTKGuardCharacter.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PTKHealthComponent.h"
+#include "Core/PTKBattlefield.h"
+#include "Core/PTKGameModeBase.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/OverlapResult.h"
@@ -356,6 +359,17 @@ void APTKKingCharacter::HandleHealthChanged(UPTKHealthComponent* /*Component*/,
 		__FUNCTION__,
 		GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f);
 
+	// Seriously wounded: spend the power. Checked on the damage event rather
+	// than per tick, because the threshold can only ever be crossed by taking a
+	// hit - polling for it would ask the same question sixty times a second and
+	// get the same answer.
+	if (HealthComponent && !bPowerSpent
+		&& HealthComponent->GetHealthFraction() <= PowerHealthThreshold
+		&& NewHealth > 0.0f)
+	{
+		TriggerEmergencyPower();
+	}
+
 	// The death broadcast follows this one, and it wins: starting a hit
 	// reaction here would immediately be overwritten by the collapse.
 	if (NewHealth <= 0.0f)
@@ -375,11 +389,72 @@ void APTKKingCharacter::HandleHealthChanged(UPTKHealthComponent* /*Component*/,
 	EnterState(EPTKKingState::Hit);
 }
 
+APTKGuardCharacter* APTKKingCharacter::GetBoostedGuard() const
+{
+	return (BoostedGuard && IsValid(BoostedGuard) && BoostedGuard->IsDamageBoosted())
+		? BoostedGuard : nullptr;
+}
+
+bool APTKKingCharacter::TriggerEmergencyPower()
+{
+	if (bPowerSpent || IsDead())
+	{
+		return false;
+	}
+
+	// Pick the guard best placed to use it: the one nearest the King, since
+	// that is where the fight that is hurting him actually is. A guard across
+	// the map at double damage changes nothing about the enemies at the gate.
+	APTKGuardCharacter* Chosen = nullptr;
+	float BestSq = TNumericLimits<float>::Max();
+
+	if (const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+	{
+		for (const TObjectPtr<APTKGuardCharacter>& Guard : Field->GetGuards())
+		{
+			if (!Guard || !IsValid(Guard) || Guard->IsDead())
+			{
+				continue;
+			}
+			const float Sq = FVector::DistSquared(GetActorLocation(), Guard->GetActorLocation());
+			if (Sq < BestSq)
+			{
+				BestSq = Sq;
+				Chosen = Guard;
+			}
+		}
+	}
+
+	if (!Chosen || !Chosen->ApplyDamageBoost(PowerBoostMultiplier, PowerBoostDuration))
+	{
+		return false;
+	}
+
+	// Latch only once a guard actually took the boost, so a cast that found
+	// nobody alive is not silently counted as the power having been used.
+	bPowerSpent = true;
+	BoostedGuard = Chosen;
+	TriggerPowerCast();
+
+	UE_LOG(LogPTK, Warning, TEXT("KING POWER | %s empowered x%.1f for %.0fs (King at %.0f%%)"),
+		*Chosen->GetGuardId().ToString(), PowerBoostMultiplier, PowerBoostDuration,
+		HealthComponent ? HealthComponent->GetHealthFraction() * 100.0f : 0.0f);
+	return true;
+}
+
 void APTKKingCharacter::HandleDeath(UPTKHealthComponent* /*Component*/, AActor* Killer)
 {
 	if (State == EPTKKingState::Dead)
 	{
 		return;
+	}
+
+	// The one thing that ends the run in defeat. Raised here rather than
+	// polled by the game mode so the death animation and the game-over state
+	// begin on the same frame.
+	if (APTKGameModeBase* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<APTKGameModeBase>() : nullptr)
+	{
+		Mode->NotifyKingDefeated();
 	}
 
 	EnterState(EPTKKingState::Dead);

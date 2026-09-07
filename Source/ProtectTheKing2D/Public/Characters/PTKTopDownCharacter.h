@@ -217,6 +217,49 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
 	float GetAttackHitDistance() const { return GetAttackReach() - GetAttackHitRadius(); }
 
+	/**
+	 * Damage one swing actually deals right now: the authored value, the
+	 * standing multiplier and any temporary boost, combined.
+	 *
+	 * Every place that deals damage reads THIS rather than AttackDamage, which
+	 * is what lets wave scaling and the King's power both work without either of
+	 * them touching the Blueprint's own number. The two compose: a wave-5
+	 * enemy at 1.3x that is also boosted is at 2.6x, and when the boost lapses
+	 * it drops back to 1.3x rather than to 1.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	float GetEffectiveAttackDamage() const;
+
+	/** The authored, unmodified number. For HUD text that wants the base value. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	float GetBaseAttackDamage() const { return AttackDamage; }
+
+	/**
+	 * Standing multiplier. Set once per enemy as it spawns, by the wave manager.
+	 * Persists for the character's life; not a timed effect.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Combat")
+	void SetDamageMultiplier(float Multiplier);
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	float GetDamageMultiplier() const { return DamageMultiplier; }
+
+	/**
+	 * Applies a timed combat boost. Refuses while one is already running, so the
+	 * King's power cannot be stacked into an arbitrarily large multiplier by
+	 * being triggered repeatedly.
+	 *
+	 * Returns true if a boost actually started.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Combat")
+	bool ApplyDamageBoost(float Multiplier, float Duration);
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	bool IsDamageBoosted() const { return BoostRemaining > 0.0f; }
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Combat")
+	float GetDamageBoostRemaining() const { return BoostRemaining; }
+
 	/** Latest movement input, already clamped so its magnitude never exceeds 1. */
 	UFUNCTION(BlueprintPure, Category = "PTK|State")
 	FVector2D GetMoveInput() const { return MoveInput; }
@@ -234,6 +277,13 @@ public:
 	void SetFacingDirection(EPTKFacingDirection NewDirection);
 
 protected:
+	/**
+	 * Holds the camera inside the battlefield rectangle, so walking into a
+	 * corner never reveals the void beyond the artwork. Called every tick;
+	 * does nothing for a character with no camera rig, or with no battlefield.
+	 */
+	void UpdateCameraClamp();
+
 	/**
 	 * Chooses the flipbook for a state + direction pair.
 	 * Virtual so later phases (Attack, Hit, Death) extend the mapping here
@@ -557,6 +607,20 @@ protected:
 	/** Damage one connecting swing deals. Prototype: Ravager 25, Swarm Node 15. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Combat", meta = (ClampMin = "0.0"))
 	float AttackDamage = 25.0f;
+
+	/**
+	 * Standing multiplier on AttackDamage. 1 for everything the designer placed;
+	 * raised per instance by the wave manager as later waves spawn.
+	 */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Combat", meta = (ClampMin = "0.0"))
+	float DamageMultiplier = 1.0f;
+
+	/** Multiplier of the running boost. Meaningless while BoostRemaining is 0. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Combat")
+	float BoostMultiplier = 1.0f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Combat")
+	float BoostRemaining = 0.0f;
 
 	/**
 	 * How far along the attack animation the hit lands, as a fraction of its

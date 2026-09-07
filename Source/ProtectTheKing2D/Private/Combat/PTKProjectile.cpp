@@ -162,9 +162,14 @@ void APTKProjectile::Tick(float DeltaSeconds)
 		Params.AddIgnoredActor(SourceActor);
 	}
 
+	// Pawn AND WorldDynamic - a guard base is a structure, not a pawn, and a
+	// Pawn-only sweep flies straight through it. See PerformAttackHit.
+	FCollisionObjectQueryParams ObjectTypes;
+	ObjectTypes.AddObjectTypesToQuery(ECC_Pawn);
+	ObjectTypes.AddObjectTypesToQuery(ECC_WorldDynamic);
+
 	World->SweepMultiByObjectType(
-		Hits, Start, End, FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn),
+		Hits, Start, End, FQuat::Identity, ObjectTypes,
 		FCollisionShape::MakeSphere(CollisionRadius), Params);
 
 	if (bDrawFlight)
@@ -264,9 +269,12 @@ int32 APTKProjectile::ApplySplash(const FVector& AtLocation, AActor* DirectVicti
 		Params.AddIgnoredActor(SourceActor);
 	}
 
+	FCollisionObjectQueryParams SplashTypes;
+	SplashTypes.AddObjectTypesToQuery(ECC_Pawn);
+	SplashTypes.AddObjectTypesToQuery(ECC_WorldDynamic);
+
 	World->OverlapMultiByObjectType(
-		Overlaps, AtLocation, FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn),
+		Overlaps, AtLocation, FQuat::Identity, SplashTypes,
 		FCollisionShape::MakeSphere(Radius), Params);
 
 	if (bDrawFlight)

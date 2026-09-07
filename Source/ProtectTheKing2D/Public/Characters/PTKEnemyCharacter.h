@@ -88,6 +88,34 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Enemy")
 	FText GetEnemyDisplayName() const { return EnemyDisplayName; }
 
+	// ------------------------------------------------------------------
+	// Lane assignment
+	// ------------------------------------------------------------------
+
+	/**
+	 * Puts this enemy on a lane. Called once by the wave manager as it spawns.
+	 *
+	 * An enemy without a route still works - it falls back to the old
+	 * nearest-objective behaviour - so the development spawner and anything
+	 * placed by hand keep functioning.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Enemy|Lane")
+	void AssignLaneRoute(FName RouteId);
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Enemy|Lane")
+	FName GetLaneRoute() const { return LaneRouteId; }
+
+	UFUNCTION(BlueprintPure, Category = "PTK|Enemy|Lane")
+	int32 GetLaneStep() const { return LaneStep; }
+
+	/** 0..1 along the assigned lane. Zero when unassigned. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Enemy|Lane")
+	float GetLaneProgress() const;
+
+	/** How far this enemy currently is from its own lane. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Enemy|Lane")
+	float GetDistanceFromLane() const;
+
 protected:
 	virtual void HandleDeath(AActor* Killer) override;
 	virtual void FireProjectile() override;
@@ -163,6 +191,39 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Enemy|Perception", meta = (ClampMin = "0.0"))
 	float TargetRefreshInterval = 0.5f;
+
+	/**
+	 * How far off its lane an enemy will step to fight something.
+	 *
+	 * This is the ONLY licence an enemy has to leave the road, and it doubles as
+	 * the perception radius: only objectives within this distance are candidates
+	 * at all. Bounding the two together is what guarantees an enemy can never be
+	 * dragged across the map - it cannot even see a target it would have to
+	 * leave the lane to reach.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Enemy|Lane", meta = (ClampMin = "0.0"))
+	float LaneEngageRadius = 520.0f;
+
+	/** How close counts as having arrived at a lane node. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Enemy|Lane", meta = (ClampMin = "10.0"))
+	float LaneNodeReachRadius = 150.0f;
+
+	/** The assigned route, or NAME_None for the unassigned fallback behaviour. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Enemy|Lane")
+	FName LaneRouteId = NAME_None;
+
+	/** Index of the node currently being walked toward. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Enemy|Lane")
+	int32 LaneStep = 0;
+
+	/** Where this enemy should walk when it has nothing to fight. */
+	bool GetLaneGoal(FVector& OutGoal) const;
+
+	/** Steps to the next node once the current one is reached. */
+	void AdvanceLaneIfArrived();
+
+	/** Nearest hostile objective within LaneEngageRadius, or null. */
+	AActor* FindLaneTarget() const;
 
 	// ------------------------------------------------------------------
 	// Attack pacing

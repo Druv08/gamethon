@@ -2,6 +2,7 @@
 
 #include "Core/PTKGameModeBase.h"
 #include "Core/PTKEnemySpawner.h"
+#include "Core/PTKWaveManager.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 
@@ -47,7 +48,12 @@ APTKGameModeBase::APTKGameModeBase()
 bool APTKGameModeBase::IsGameplayActive(const UWorld* World)
 {
 	const APTKGameModeBase* Mode = World ? World->GetAuthGameMode<APTKGameModeBase>() : nullptr;
-	return Mode && Mode->IsPlaying();
+
+	// A finished run is not active play. Testing the result here rather than at
+	// each caller is what makes the victory and defeat screens freeze combat,
+	// input, spawning and guard switching all at once - every one of those
+	// already asks this question before it does anything.
+	return Mode && Mode->IsPlaying() && !Mode->IsMatchOver();
 }
 
 void APTKGameModeBase::StartGame()
@@ -58,9 +64,52 @@ void APTKGameModeBase::StartGame()
 	{
 		It->HideStartScreen();
 	}
-	for (TActorIterator<APTKEnemySpawner> It(GetWorld()); It; ++It)
+
+	// The wave manager is the real spawning system. APTKEnemySpawner is kept as
+	// a stress-test tool and only wakes if one was deliberately left in the
+	// level with spawning enabled.
+	if (APTKWaveManager* Waves = APTKWaveManager::Get(GetWorld()))
 	{
-		It->StartSpawning();
+		Waves->StartRun();
+	}
+	else
+	{
+		for (TActorIterator<APTKEnemySpawner> It(GetWorld()); It; ++It)
+		{
+			It->StartSpawning();
+		}
 	}
 	UE_LOG(LogPTK, Log, TEXT("GAME START | Playing"));
+}
+
+void APTKGameModeBase::NotifyKingDefeated()
+{
+	EndRun(EPTKMatchResult::Defeat);
+}
+
+void APTKGameModeBase::NotifyWavesCleared()
+{
+	EndRun(EPTKMatchResult::Victory);
+}
+
+void APTKGameModeBase::EndRun(EPTKMatchResult Result)
+{
+	if (MatchResult != EPTKMatchResult::InProgress)
+	{
+		return;
+	}
+	MatchResult = Result;
+
+	if (APTKWaveManager* Waves = APTKWaveManager::Get(GetWorld()))
+	{
+		Waves->StopRun();
+	}
+	for (TActorIterator<APTKEnemySpawner> It(GetWorld()); It; ++It)
+	{
+		It->ClearWave();
+	}
+
+	UE_LOG(LogPTK, Warning, TEXT("MATCH OVER | %s"),
+		Result == EPTKMatchResult::Victory ? TEXT("VICTORY - the King survived")
+		: TEXT("DEFEAT - the King has fallen"));
 }

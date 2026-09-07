@@ -8,6 +8,7 @@
 #include "GameFramework/Actor.h"
 #include "PTKKingCharacter.generated.h"
 
+class APTKGuardCharacter;
 class UCapsuleComponent;
 class UPaperFlipbook;
 class UPaperFlipbookComponent;
@@ -104,6 +105,25 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PTK|King")
 	bool TriggerPowerCast();
+
+	/**
+	 * The emergency power: casts, picks one living guard, and boosts it.
+	 *
+	 * Fires by itself once the King's health crosses PowerHealthThreshold. It is
+	 * a single desperate act, not a cooldown ability - bPowerSpent latches, so a
+	 * King who is healed and wounded again does not get a second one.
+	 *
+	 * Returns true only if a guard was actually boosted.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|King|Power")
+	bool TriggerEmergencyPower();
+
+	UFUNCTION(BlueprintPure, Category = "PTK|King|Power")
+	bool IsPowerSpent() const { return bPowerSpent; }
+
+	/** The guard currently carrying the King's boost, or nullptr. */
+	UFUNCTION(BlueprintPure, Category = "PTK|King|Power")
+	APTKGuardCharacter* GetBoostedGuard() const;
 
 	/** Development helper: applies damage through the normal health path. */
 	UFUNCTION(BlueprintCallable, Category = "PTK|King|Debug")
@@ -205,6 +225,28 @@ protected:
 	/** Fallback duration used when a timed flipbook is missing. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Animation", meta = (ClampMin = "0.05"))
 	float FallbackStateDuration = 0.45f;
+
+	// ------------------------------------------------------------------
+	// Emergency power
+	// ------------------------------------------------------------------
+
+	/** Health fraction at or below which the King spends his power. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Power", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PowerHealthThreshold = 0.35f;
+
+	/** Combat multiplier granted to the chosen guard. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Power", meta = (ClampMin = "1.0"))
+	float PowerBoostMultiplier = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Power", meta = (ClampMin = "0.1"))
+	float PowerBoostDuration = 10.0f;
+
+	/** Latches on first use, so the power is once per run. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|King|Power")
+	bool bPowerSpent = false;
+
+	UPROPERTY()
+	TObjectPtr<APTKGuardCharacter> BoostedGuard;
 
 	/** Draws the alert radius in PIE. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Debug")

@@ -3,8 +3,12 @@
 #include "Characters/PTKEnemyCharacter.h"
 
 #include "AIController.h"
+#include "Characters/PTKGuardCharacter.h"
+#include "Characters/PTKKingCharacter.h"
 #include "Combat/PTKCombatTarget.h"
 #include "Combat/PTKProjectile.h"
+#include "Core/PTKBattlefield.h"
+#include "Core/PTKGuardBase.h"
 #include "EngineUtils.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PTKHealthComponent.h"
@@ -73,32 +77,193 @@ bool APTKEnemyCharacter::IsValidAttackVictim(const AActor* Victim) const
 	return Super::IsValidAttackVictim(Victim) && Victim == Target;
 }
 
+// ---------------------------------------------------------------------------
+// Lanes
+// ---------------------------------------------------------------------------
+
+void APTKEnemyCharacter::AssignLaneRoute(FName RouteId)
+{
+	LaneRouteId = RouteId;
+	LaneStep = 0;
+
+	// Skip straight past any leading nodes already behind us. An enemy spawns
+	// in a scattered ring around its portal, so some of them start slightly
+	// beyond the portal node and would otherwise walk backwards to touch it
+	// before setting off.
+	if (const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+	{
+		const int32 Length = Field->GetRouteLength(RouteId);
+		while (LaneStep + 1 < Length
+			&& FVector::Dist(GetActorLocation(),
+				Field->GetRouteStepLocation(RouteId, LaneStep)) <= LaneNodeReachRadius)
+		{
+			++LaneStep;
+		}
+	}
+}
+
+float APTKEnemyCharacter::GetLaneProgress() const
+{
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
+	return (Field && !LaneRouteId.IsNone())
+		? Field->GetRouteProgress(LaneRouteId, GetActorLocation()) : 0.0f;
+}
+
+float APTKEnemyCharacter::GetDistanceFromLane() const
+{
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
+	return (Field && !LaneRouteId.IsNone())
+		? Field->DistanceToRoute(LaneRouteId, GetActorLocation()) : 0.0f;
+}
+
+bool APTKEnemyCharacter::GetLaneGoal(FVector& OutGoal) const
+{
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
+	if (!Field || LaneRouteId.IsNone())
+	{
+		return false;
+	}
+	const int32 Length = Field->GetRouteLength(LaneRouteId);
+	if (Length == 0)
+	{
+		return false;
+	}
+	OutGoal = Field->GetRouteStepLocation(LaneRouteId, FMath::Min(LaneStep, Length - 1));
+	return true;
+}
+
+void APTKEnemyCharacter::AdvanceLaneIfArrived()
+{
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
+	if (!Field || LaneRouteId.IsNone())
+	{
+		return;
+	}
+	const int32 Length = Field->GetRouteLength(LaneRouteId);
+	while (LaneStep + 1 < Length
+		&& FVector::Dist(GetActorLocation(),
+			Field->GetRouteStepLocation(LaneRouteId, LaneStep)) <= LaneNodeReachRadius)
+	{
+		++LaneStep;
+	}
+}
+
+AActor* APTKEnemyCharacter::FindLaneTarget() const
+{
+	// LANE-AWARE TARGETING.
+	//
+	// Only things within LaneEngageRadius of where this enemy is STANDING are
+	// candidates. It is walking its lane, so what comes into range is whatever
+	// that lane runs past - which is the whole mechanism by which pressure ends
+	// up spread around the map instead of every horde converging on whichever
+	// guard happens to be globally nearest.
+	//
+	// The King is in the candidate set on the same terms as everyone else. He is
+	// only ever reachable at the END of a lane, so an enemy at its portal is
+	// thousands of units away and cannot see him; one that has walked its whole
+	// lane can, which is exactly the "eventually reach King" case.
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
+	if (!Field)
+	{
+		return nullptr;
+	}
+
+	const FVector Origin = GetActorLocation();
+	AActor* Best = nullptr;
+	float BestSq = FMath::Square(LaneEngageRadius);
+
+	auto Consider = [this, &Origin, &Best, &BestSq](AActor* Candidate)
+	{
+		if (!Candidate || Candidate == this || !PTKCombat::IsHostileTarget(this, Candidate))
+		{
+			return;
+		}
+		const float Sq = FVector::DistSquared(Origin, Candidate->GetActorLocation());
+		if (Sq < BestSq)
+		{
+			BestSq = Sq;
+			Best = Candidate;
+		}
+	};
+
+	for (const TObjectPtr<APTKGuardCharacter>& Guard : Field->GetGuards())
+	{
+		Consider(Guard);
+	}
+	for (const TObjectPtr<APTKGuardBase>& Base : Field->GetBases())
+	{
+		Consider(Base);
+	}
+	Consider(Field->GetKing());
+
+	return Best;
+}
+
 AActor* APTKEnemyCharacter::FindTarget() const
 {
-	// Priority: the nearest living guard, and the King only when no guard is
-	// left standing. That is the whole rule for now - no threat tables, no
-	// scoring, no memory of who hurt whom.
+	// On a lane, the lane decides. Off one - the development spawner, or an
+	// enemy placed by hand - fall through to the global search below.
+	if (!LaneRouteId.IsNone())
+	{
+		return FindLaneTarget();
+	}
+
+	// NEAREST VALID OBJECTIVE, by road distance.
 	//
-	// Guards are found by iterating the character base rather than by looking
-	// up a named Blueprint, so Aegis, Wraith, Reaver and Sentinel are picked up
-	// the day they exist without this function changing.
+	// Guards and guard bases compete on equal terms - a base 120 units away is
+	// taken over a guard 300 away, and the reverse. Neither outranks the other
+	// by type, which is what makes a base worth defending rather than scenery
+	// the enemy walks past on its way to a guard.
+	//
+	// The King is NOT in this contest. He is the fallback for when the whole
+	// line is gone, and including him would let an enemy that spawned near the
+	// centre ignore every defender and walk straight onto the objective.
+	//
+	// Distance is measured through the lane graph, not straight-line, so a base
+	// on the far side of a treeline does not look close just because the crow
+	// flies that way.
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
 	const FVector Origin = GetActorLocation();
 
 	AActor* Best = nullptr;
-	float BestDistanceSq = TNumericLimits<float>::Max();
+	float BestDistance = TNumericLimits<float>::Max();
 
-	for (TActorIterator<APTKTopDownCharacter> It(GetWorld()); It; ++It)
+	auto Consider = [this, Field, &Origin, &Best, &BestDistance](AActor* Candidate)
 	{
-		APTKTopDownCharacter* const Guard = *It;
-		if (Guard == this || !PTKCombat::IsHostileTarget(this, Guard))
+		if (!Candidate || Candidate == this || !PTKCombat::IsHostileTarget(this, Candidate))
 		{
-			continue;
+			return;
 		}
-		const float DistanceSq = FVector::DistSquared(Origin, Guard->GetActorLocation());
-		if (DistanceSq < BestDistanceSq)
+		const FVector At = Candidate->GetActorLocation();
+		const float Distance = Field
+			? Field->GetPathDistance(Origin, At)
+			: FVector::Dist(Origin, At);
+		if (Distance < BestDistance)
 		{
-			BestDistanceSq = DistanceSq;
-			Best = Guard;
+			BestDistance = Distance;
+			Best = Candidate;
+		}
+	};
+
+	if (Field)
+	{
+		// Cached registries rather than an actor iterator: this runs per enemy
+		// on a timer, and at a few hundred enemies a full level scan each time
+		// is the difference between a frame and a stall.
+		for (const TObjectPtr<APTKGuardCharacter>& Guard : Field->GetGuards())
+		{
+			Consider(Guard);
+		}
+		for (const TObjectPtr<APTKGuardBase>& Base : Field->GetBases())
+		{
+			Consider(Base);
+		}
+	}
+	else
+	{
+		for (TActorIterator<APTKTopDownCharacter> It(GetWorld()); It; ++It)
+		{
+			Consider(*It);
 		}
 	}
 
@@ -107,21 +272,26 @@ AActor* APTKEnemyCharacter::FindTarget() const
 		return Best;
 	}
 
-	// No guard alive. Fall back to any other hostile combat target - which is
-	// the King. This second sweep walks every actor, so it is deliberately
-	// placed behind the early return: it only ever runs once the defenders are
-	// gone, never while a fight is in progress.
+	// Nothing left standing: the King. Reached only once every guard is dead
+	// and every base destroyed, which is exactly the fallback the spec asks for.
+	if (Field)
+	{
+		if (APTKKingCharacter* King = Field->GetKing())
+		{
+			if (PTKCombat::IsHostileTarget(this, King))
+			{
+				return King;
+			}
+		}
+		return nullptr;
+	}
+
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
 		AActor* const Candidate = *It;
 		if (Candidate != this && PTKCombat::IsHostileTarget(this, Candidate))
 		{
-			const float DistanceSq = FVector::DistSquared(Origin, Candidate->GetActorLocation());
-			if (DistanceSq < BestDistanceSq)
-			{
-				BestDistanceSq = DistanceSq;
-				Best = Candidate;
-			}
+			Consider(Candidate);
 		}
 	}
 	return Best;
@@ -203,10 +373,34 @@ FVector2D APTKEnemyCharacter::ComputeSeparation() const
 
 FVector2D APTKEnemyCharacter::ComputeDesiredInput(const FVector& TargetLocation) const
 {
-	// Straight-line steering across open ground, nudged sideways by anyone in
-	// the way. The arena has no lanes yet; when the real path system lands, this
-	// is the only method that changes.
-	FVector2D Input = ComputeBearingTo(TargetLocation) + ComputeSeparation() * SeparationWeight;
+	// Steers straight at whatever it is given, plus a nudge away from
+	// neighbours. Choosing WHERE to go is the caller's job now: an enemy on a
+	// lane is handed its next lane node, and only ever handed a target it is
+	// already close enough to reach without leaving the road.
+	//
+	// The previous version re-solved a shortest path here on every frame from
+	// wherever the enemy happened to be standing. That is what let a crowd drift
+	// off the road and then re-route across the terrain - each frame it would
+	// snap to whichever node was nearest to its drifted position and cut the
+	// corner toward it.
+	FVector Steer = TargetLocation;
+
+	// Unassigned enemies keep the old graph-walking behaviour, so the
+	// development spawner and hand-placed enemies still path sensibly.
+	if (LaneRouteId.IsNone())
+	{
+		if (const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+		{
+			FVector Step;
+			if (FVector::Dist(GetActorLocation(), TargetLocation) > LaneEngageRadius
+				&& Field->GetNextLaneStep(GetActorLocation(), TargetLocation, Step))
+			{
+				Steer = Step;
+			}
+		}
+	}
+
+	FVector2D Input = ComputeBearingTo(Steer) + ComputeSeparation() * SeparationWeight;
 
 	const float Size = Input.Size();
 	return (Size > KINDA_SMALL_NUMBER) ? (Input / Size) : FVector2D::ZeroVector;
@@ -237,7 +431,7 @@ void APTKEnemyCharacter::FireProjectile()
 	if (Shot)
 	{
 		Shot->SetIntendedTarget(Target);
-		Shot->Launch(Aim, FacingDirection, this, Team, AttackDamage,
+		Shot->Launch(Aim, FacingDirection, this, Team, GetEffectiveAttackDamage(),
 			ProjectileSpeed, GetAttackReach(), MuzzleHeightOffset, MovementUpVector);
 	}
 }
@@ -308,23 +502,37 @@ void APTKEnemyCharacter::Tick(float DeltaSeconds)
 		return;
 	}
 
+	// Nothing to fight: keep marching the lane. An enemy is an attacker with
+	// somewhere to be, so "no target" means "advance", not "stand still" - and
+	// resuming here is also how it returns to the road after a fight beside it
+	// finishes, without needing any explicit re-join step.
 	if (!Target)
 	{
-		EnemyState = EPTKEnemyState::Idle;
-		SetMoveInput(FVector2D::ZeroVector);
+		AdvanceLaneIfArrived();
+
+		FVector Goal;
+		if (GetLaneGoal(Goal))
+		{
+			EnemyState = EPTKEnemyState::Chase;
+			SetMoveInput(ComputeDesiredInput(Goal));
+		}
+		else
+		{
+			EnemyState = EPTKEnemyState::Idle;
+			SetMoveInput(FVector2D::ZeroVector);
+		}
 		return;
 	}
 
 	const float Distance = FVector::Dist(GetActorLocation(), Target->GetActorLocation());
 
-	if (Distance > DetectionRange)
-	{
-		// Out of range entirely: stand still rather than drifting toward a
-		// target the enemy is not supposed to have noticed.
-		EnemyState = EPTKEnemyState::Idle;
-		SetMoveInput(FVector2D::ZeroVector);
-		return;
-	}
+	// NOTE: there is deliberately no "further than DetectionRange, so stand
+	// still" case any more. That rule belonged to a small test arena where
+	// everything started within sight of everything else. On the real map an
+	// enemy spawns in a corner thousands of units from any objective, and
+	// waiting to notice one would leave the whole horde standing at the portal
+	// forever. An enemy is an attacker: it advances on its objective from
+	// wherever it lands. DetectionRange now only tunes the diagnostic ring.
 
 	// The tolerance band stops a target hovering exactly on AttackRange from
 	// flipping the state - and therefore the animation - every single frame.

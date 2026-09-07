@@ -3,8 +3,12 @@
 #include "AI/PTKGuardAIController.h"
 #include "Core/PTKGameModeBase.h"
 
+#include "Characters/PTKEnemyCharacter.h"
 #include "Characters/PTKGuardCharacter.h"
 #include "Combat/PTKCombatTarget.h"
+#include "Components/PTKHealthComponent.h"
+#include "Core/PTKBattlefield.h"
+#include "Core/PTKGuardBase.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -171,17 +175,64 @@ void APTKGuardAIController::Tick(float DeltaSeconds)
 	}
 	else
 	{
-		// Nothing to fight: go back to the post and stand there.
-		const FVector ToHome = Guard->GetHomePosition() - Here;
-		if (ToHome.Size() <= Guard->GetAIHomeTolerance())
+		// Nothing local to fight. Priority is: help a neighbour who does have a
+		// problem, otherwise go home. Defending its own ground is already
+		// handled above by having found a Target at all, so reaching here means
+		// this guard's own area is quiet.
+		AssistRefreshTimer -= DeltaSeconds;
+
+		// Drop an assist the moment it stops being one: the fight is over, the
+		// ally died, or its base fell. Re-checked continuously rather than only
+		// on the scan tick, so a guard never lingers at a finished fight.
+		if (AssistTarget && (!IsValid(AssistTarget) || !IsThreatened(AssistTarget)))
 		{
-			AIState = EPTKGuardAIState::Hold;
-			Guard->SetMoveInput(FVector2D::ZeroVector);
+			UE_LOG(LogPTK, Log, TEXT("GUARD AI | %s finished assisting %s"),
+				*Guard->GetName(), *GetNameSafe(AssistTarget));
+			AssistTarget = nullptr;
+		}
+
+		if (!AssistTarget && AssistRefreshTimer <= 0.0f)
+		{
+			AssistRefreshTimer = AssistRefreshInterval;
+			if (AActor* Help = FindAssistTarget(Guard))
+			{
+				AssistTarget = Help;
+				UE_LOG(LogPTK, Log, TEXT("GUARD AI | %s assisting %s (%d already helping)"),
+					*Guard->GetName(), *GetNameSafe(Help), CountAssistersOn(Help));
+			}
+		}
+
+		if (AssistTarget)
+		{
+			const FVector ToHelp = AssistTarget->GetActorLocation() - Here;
+			AIState = EPTKGuardAIState::Assist;
+			// Stop short of the ally itself so helpers form a line beside it
+			// rather than piling onto its exact position.
+			if (ToHelp.Size() > AssistFightRadius * 0.5f)
+			{
+				Guard->SetMoveInput(ToScreenInput(Guard, ToHelp));
+			}
+			else
+			{
+				Guard->SetMoveInput(FVector2D::ZeroVector);
+				FaceLocation(Guard, AssistTarget->GetActorLocation());
+			}
 		}
 		else
 		{
-			AIState = EPTKGuardAIState::Return;
-			Guard->SetMoveInput(ToScreenInput(Guard, ToHome));
+			// Back to the post it actually holds - never to wherever the last
+			// fight happened to end.
+			const FVector ToHome = Guard->GetHomePosition() - Here;
+			if (ToHome.Size() <= Guard->GetAIHomeTolerance())
+			{
+				AIState = EPTKGuardAIState::Hold;
+				Guard->SetMoveInput(FVector2D::ZeroVector);
+			}
+			else
+			{
+				AIState = EPTKGuardAIState::Return;
+				Guard->SetMoveInput(ToScreenInput(Guard, ToHome));
+			}
 		}
 	}
 
@@ -202,10 +253,147 @@ bool APTKGuardAIController::IsTargetStillValid(const APTKGuardCharacter* Guard,
 	{
 		return false;
 	}
-	// Bounded by distance from the POST, not from the guard. That is what stops
-	// an enemy walking a guard off its ground one step at a time.
-	return FVector::Dist(Guard->GetHomePosition(), Candidate->GetActorLocation())
+	// Bounded by distance from the ANCHOR, not from the guard. That is what
+	// stops an enemy walking a guard off its ground one step at a time. While
+	// assisting, the anchor is the fight it travelled to - see GetDefendAnchor.
+	return FVector::Dist(GetDefendAnchor(Guard), Candidate->GetActorLocation())
 		<= Guard->GetMaxChaseDistance();
+}
+
+FVector APTKGuardAIController::GetDefendAnchor(const APTKGuardCharacter* Guard) const
+{
+	if (AssistTarget && IsValid(AssistTarget))
+	{
+		return AssistTarget->GetActorLocation();
+	}
+	return Guard ? Guard->GetHomePosition() : FVector::ZeroVector;
+}
+
+bool APTKGuardAIController::IsThreatened(const AActor* Candidate) const
+{
+	if (!Candidate || !GetWorld())
+	{
+		return false;
+	}
+
+	// A destroyed base is not worth defending, and a dead guard cannot be helped.
+	if (const APTKGuardBase* Base = Cast<APTKGuardBase>(Candidate))
+	{
+		if (Base->IsDestroyed())
+		{
+			return false;
+		}
+	}
+	else if (const APTKGuardCharacter* Ally = Cast<APTKGuardCharacter>(Candidate))
+	{
+		if (Ally->IsDead())
+		{
+			return false;
+		}
+	}
+
+	int32 Hostiles = 0;
+	const FVector Where = Candidate->GetActorLocation();
+	for (TActorIterator<APTKEnemyCharacter> It(GetWorld()); It; ++It)
+	{
+		APTKEnemyCharacter* const Enemy = *It;
+		if (!IsValid(Enemy) || Enemy->IsDead())
+		{
+			continue;
+		}
+		if (FVector::DistSquared(Where, Enemy->GetActorLocation())
+			<= FMath::Square(AssistFightRadius))
+		{
+			if (++Hostiles >= AssistThreatThreshold)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+int32 APTKGuardAIController::CountAssistersOn(const AActor* Threat) const
+{
+	if (!Threat || !GetWorld())
+	{
+		return 0;
+	}
+	// Counted by asking the other controllers directly. With four AI guards this
+	// is cheaper than maintaining a shared reservation table, and it cannot go
+	// stale when a guard dies, is possessed by the player, or gives up.
+	int32 Count = 0;
+	for (TActorIterator<APTKGuardAIController> It(GetWorld()); It; ++It)
+	{
+		const APTKGuardAIController* Other = *It;
+		if (Other && Other != this && Other->GetAssistTarget() == Threat
+			&& Other->GetPawn() != nullptr)
+		{
+			++Count;
+		}
+	}
+	return Count;
+}
+
+AActor* APTKGuardAIController::FindAssistTarget(const APTKGuardCharacter* Guard) const
+{
+	if (!Guard || !GetWorld())
+	{
+		return nullptr;
+	}
+
+	// A badly hurt guard holds its own ground rather than running to someone
+	// else's fight, where it would simply die further from home.
+	if (const UPTKHealthComponent* Health = Guard->GetHealthComponent())
+	{
+		if (Health->GetHealthFraction() < AssistMinHealthFraction)
+		{
+			return nullptr;
+		}
+	}
+
+	const FVector Home = Guard->GetHomePosition();
+	AActor* Best = nullptr;
+	float BestSq = FMath::Square(AssistRadius);
+
+	auto Consider = [this, Guard, &Home, &Best, &BestSq](AActor* Candidate)
+	{
+		if (!Candidate || Candidate == Guard)
+		{
+			return;
+		}
+		const float Sq = FVector::DistSquared(Home, Candidate->GetActorLocation());
+		if (Sq >= BestSq)
+		{
+			return;
+		}
+		if (!IsThreatened(Candidate))
+		{
+			return;
+		}
+		// Refuse a fight that already has enough help. This is the whole of
+		// "do not dogpile" - checked before claiming, so two guards deciding on
+		// the same frame cannot both slip past a limit of one.
+		if (CountAssistersOn(Candidate) >= MaxAssistGuardsPerThreat)
+		{
+			return;
+		}
+		BestSq = Sq;
+		Best = Candidate;
+	};
+
+	if (const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+	{
+		for (const TObjectPtr<APTKGuardCharacter>& Ally : Field->GetGuards())
+		{
+			Consider(Ally);
+		}
+		for (const TObjectPtr<APTKGuardBase>& Base : Field->GetBases())
+		{
+			Consider(Base);
+		}
+	}
+	return Best;
 }
 
 AActor* APTKGuardAIController::FindTarget(const APTKGuardCharacter* Guard) const
@@ -216,7 +404,7 @@ AActor* APTKGuardAIController::FindTarget(const APTKGuardCharacter* Guard) const
 	}
 
 	const FVector Here = Guard->GetActorLocation();
-	const FVector Home = Guard->GetHomePosition();
+	const FVector Anchor = GetDefendAnchor(Guard);
 	const float Detection = Guard->GetDetectionRange();
 	const float Leash = Guard->GetMaxChaseDistance();
 
@@ -233,7 +421,7 @@ AActor* APTKGuardAIController::FindTarget(const APTKGuardCharacter* Guard) const
 			continue;
 		}
 		const FVector Where = Candidate->GetActorLocation();
-		if (FVector::Dist(Home, Where) > Leash)
+		if (FVector::Dist(Anchor, Where) > Leash)
 		{
 			continue;
 		}

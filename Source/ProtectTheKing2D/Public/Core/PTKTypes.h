@@ -135,7 +135,14 @@ enum class EPTKGuardAIState : uint8
 	Engage		UMETA(DisplayName = "Engage"),
 	Attack		UMETA(DisplayName = "Attack"),
 	Return		UMETA(DisplayName = "Return Home"),
-	Dead		UMETA(DisplayName = "Dead")
+	Dead		UMETA(DisplayName = "Dead"),
+	/**
+	 * Travelling to help a neighbouring guard or base that is under attack.
+	 *
+	 * Appended last so every value above keeps the number it already had - a
+	 * reorder would silently change the meaning of saved Blueprint defaults.
+	 */
+	Assist		UMETA(DisplayName = "Assist")
 };
 
 /**

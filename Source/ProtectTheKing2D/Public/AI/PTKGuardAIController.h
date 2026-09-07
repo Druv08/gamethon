@@ -98,9 +98,39 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Guard|AI")
 	bool IsAIEnabled() const { return bAIEnabled; }
 
+	/** The ally or base this guard has gone to help, or null. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Guard|AI")
+	AActor* GetAssistTarget() const { return AssistTarget; }
+
 protected:
 	/** Nearest living hostile that is inside this guard's defended area. */
 	AActor* FindTarget(const APTKGuardCharacter* Guard) const;
+
+	/**
+	 * The point this guard is currently defending.
+	 *
+	 * Its own post normally; the ally it is helping while assisting. Target
+	 * search and the leash are both measured from HERE rather than from
+	 * HomePosition, which is what lets a guard that has travelled to a fight
+	 * actually engage in it - anchoring to home would send it across the map
+	 * and then leave it standing there unable to see anything.
+	 */
+	FVector GetDefendAnchor(const APTKGuardCharacter* Guard) const;
+
+	/**
+	 * A neighbouring guard or base worth leaving the post for, or null.
+	 *
+	 * Refuses a threat that already has MaxAssistGuardsPerThreat helpers, which
+	 * is what stops the whole line dogpiling one skirmish and leaving every
+	 * other lane open.
+	 */
+	AActor* FindAssistTarget(const APTKGuardCharacter* Guard) const;
+
+	/** How many OTHER guards are already assisting this threat. */
+	int32 CountAssistersOn(const AActor* Threat) const;
+
+	/** True while a guard or base is being meaningfully attacked. */
+	bool IsThreatened(const AActor* Candidate) const;
 
 	/** True while the target is alive, hostile, and still worth holding. */
 	bool IsTargetStillValid(const APTKGuardCharacter* Guard, const AActor* Candidate) const;
@@ -123,6 +153,40 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Guard|AI")
 	TObjectPtr<AActor> Target;
 
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|Guard|AI")
+	TObjectPtr<AActor> AssistTarget;
+
+	// ------------------------------------------------------------------
+	// Assist tuning
+	// ------------------------------------------------------------------
+
+	/** How far this guard will travel from its post to help. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PTK|Guard|Assist", meta = (ClampMin = "0.0"))
+	float AssistRadius = 1600.0f;
+
+	/**
+	 * How many hostiles must be on an ally or base before it counts as needing
+	 * help. One wandering Swarm Node is not an emergency; three is.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PTK|Guard|Assist", meta = (ClampMin = "1"))
+	int32 AssistThreatThreshold = 3;
+
+	/** Ceiling on helpers per threat, so the line cannot dogpile. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PTK|Guard|Assist", meta = (ClampMin = "1"))
+	int32 MaxAssistGuardsPerThreat = 2;
+
+	/** Radius around a threatened ally that counts as "the fight". */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PTK|Guard|Assist", meta = (ClampMin = "1.0"))
+	float AssistFightRadius = 700.0f;
+
+	/** A guard below this health fraction stays home rather than going to help. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PTK|Guard|Assist", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AssistMinHealthFraction = 0.35f;
+
+	/** Seconds between assist scans. Cheaper and steadier than every frame. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PTK|Guard|Assist", meta = (ClampMin = "0.05"))
+	float AssistRefreshInterval = 0.75f;
+
 	/**
 	 * Seconds between target searches.
 	 *
@@ -139,6 +203,7 @@ protected:
 
 private:
 	float TargetRefreshTimer = 0.0f;
+	float AssistRefreshTimer = 0.0f;
 	float DefendCooldownRemaining = 0.0f;
 	bool bAIEnabled = true;
 	EPTKGuardAIState LoggedState = EPTKGuardAIState::Inactive;

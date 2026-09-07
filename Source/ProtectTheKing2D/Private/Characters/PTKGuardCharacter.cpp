@@ -3,6 +3,7 @@
 #include "Characters/PTKGuardCharacter.h"
 
 #include "Components/PTKHealthComponent.h"
+#include "Core/PTKBattlefield.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(PTKGuardCharacter)
 
@@ -61,6 +62,20 @@ void APTKGuardCharacter::BeginPlay()
 	// Again for a guard SPAWNED at runtime, whose transform may not have been
 	// final when PostInitializeComponents ran.
 	CaptureHomePosition();
+
+	if (APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+	{
+		Field->RegisterGuard(this);
+	}
+}
+
+void APTKGuardCharacter::EndPlay(const EEndPlayReason::Type Reason)
+{
+	if (APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+	{
+		Field->UnregisterGuard(this);
+	}
+	Super::EndPlay(Reason);
 }
 
 void APTKGuardCharacter::CaptureHomePosition()

@@ -17,6 +17,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Core/PTKBattlefield.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
 #include "PaperFlipbook.h"
@@ -228,6 +229,23 @@ void APTKTopDownCharacter::BeginPlay()
 	}
 	MoveInput = FVector2D::ZeroVector;
 
+	// The zoom is DERIVED from the map, not authored per guard: the battlefield
+	// decides what share of itself is visible, so re-scaling the map cannot
+	// leave five Blueprints each remembering an ortho width that no longer
+	// shows the right fraction. Falls back to the authored value off-map.
+	//
+	// This writes the MEMBER, not the component. ApplyCollisionAndSpriteSettings
+	// below pushes CameraOrthoWidth onto the camera and is also called from
+	// OnConstruction, so setting the component here would simply be overwritten
+	// on the next line - and then again every time the actor was reconstructed.
+	if (bEnableCameraRig)
+	{
+		if (const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+		{
+			CameraOrthoWidth = Field->GetCameraOrthoWidth();
+		}
+	}
+
 	ApplyCollisionAndSpriteSettings();
 	UpdateMovementBasis();
 
@@ -297,6 +315,19 @@ void APTKTopDownCharacter::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+
+	if (BoostRemaining > 0.0f)
+	{
+		BoostRemaining = FMath::Max(BoostRemaining - DeltaSeconds, 0.0f);
+		if (BoostRemaining == 0.0f)
+		{
+			UE_LOG(LogPTK, Log, TEXT("BOOST ENDED | %s back to x%.2f"),
+				*GetName(), DamageMultiplier);
+			BoostMultiplier = 1.0f;
+		}
+	}
+
+	UpdateCameraClamp();
 
 	const bool bMoving = MoveInput.SizeSquared() > FMath::Square(MoveDeadZone);
 
@@ -1093,14 +1124,90 @@ void APTKTopDownCharacter::FireProjectile()
 	// Range is this character's own reach, not a number the projectile keeps
 	// for itself, so a ranged character's threat distance is still the single
 	// AttackRangeTiles value that the AI and the debug ring also read.
-	Shot->Launch(Aim, FacingDirection, this, Team, AttackDamage,
+	Shot->Launch(Aim, FacingDirection, this, Team, GetEffectiveAttackDamage(),
 		ProjectileSpeed, GetAttackReach(), MuzzleHeightOffset, MovementUpVector);
+}
+
+void APTKTopDownCharacter::UpdateCameraClamp()
+{
+	// Keeps the view inside the battlefield, so walking into a corner never
+	// reveals the void beyond the artwork.
+	//
+	// The correction is applied as the boom's world-space TargetOffset rather
+	// than by moving the boom or the character: the character must still be
+	// able to reach the map edge, it is only the CAMERA that stops following it
+	// there. Offsetting the arm decouples the two without either of them having
+	// to know about the other.
+	if (!bEnableCameraRig || !CameraBoom || !TopDownCamera)
+	{
+		return;
+	}
+
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
+	if (!Field)
+	{
+		return;
+	}
+
+	float Aspect = 16.0f / 9.0f;
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		int32 SizeX = 0;
+		int32 SizeY = 0;
+		PC->GetViewportSize(SizeX, SizeY);
+		if (SizeX > 0 && SizeY > 0)
+		{
+			Aspect = (float)SizeX / (float)SizeY;
+		}
+	}
+
+	const float HalfViewW = TopDownCamera->OrthoWidth * 0.5f;
+	const float HalfViewH = HalfViewW / FMath::Max(Aspect, 0.01f);
+
+	const FVector Centre = Field->GetMapCentre();
+	const float LimitX = FMath::Max(Field->GetMapWidth() * 0.5f - HalfViewW, 0.0f);
+	const float LimitZ = FMath::Max(Field->GetMapHeight() * 0.5f - HalfViewH, 0.0f);
+
+	const FVector Here = GetActorLocation();
+	const FVector Wanted(
+		FMath::Clamp(Here.X, Centre.X - LimitX, Centre.X + LimitX),
+		Here.Y,
+		FMath::Clamp(Here.Z, Centre.Z - LimitZ, Centre.Z + LimitZ));
+
+	CameraBoom->TargetOffset = FVector(Wanted.X - Here.X, 0.0f, Wanted.Z - Here.Z);
+}
+
+float APTKTopDownCharacter::GetEffectiveAttackDamage() const
+{
+	const float Boost = BoostRemaining > 0.0f ? BoostMultiplier : 1.0f;
+	return AttackDamage * DamageMultiplier * Boost;
+}
+
+void APTKTopDownCharacter::SetDamageMultiplier(float Multiplier)
+{
+	DamageMultiplier = FMath::Max(Multiplier, 0.0f);
+}
+
+bool APTKTopDownCharacter::ApplyDamageBoost(float Multiplier, float Duration)
+{
+	// Refusing while one is running is what makes "do not stack" structural
+	// rather than a rule the caller has to remember.
+	if (BoostRemaining > 0.0f || Multiplier <= 0.0f || Duration <= 0.0f || IsDead())
+	{
+		return false;
+	}
+	BoostMultiplier = Multiplier;
+	BoostRemaining = Duration;
+	UE_LOG(LogPTK, Log, TEXT("BOOST | %s at x%.2f for %.1fs (%.0f -> %.0f damage)"),
+		*GetName(), Multiplier, Duration,
+		AttackDamage * DamageMultiplier, GetEffectiveAttackDamage());
+	return true;
 }
 
 void APTKTopDownCharacter::PerformAttackHit()
 {
 	UWorld* const World = GetWorld();
-	if (!World || AttackDamage <= 0.0f)
+	if (!World || GetEffectiveAttackDamage() <= 0.0f)
 	{
 		return;
 	}
@@ -1119,9 +1226,25 @@ void APTKTopDownCharacter::PerformAttackHit()
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(PTKAttackHit), false, this);
 	Params.AddIgnoredActor(this);
 
+	// Pawn AND WorldDynamic.
+	//
+	// Guards, enemies and the King are all Pawn-channel capsules, so a Pawn-only
+	// query covered every target that existed when this was written. A guard
+	// BASE is not a pawn - it is a static structure on WorldDynamic - so it was
+	// silently absent from every overlap result and could not be damaged at all,
+	// however convincingly the enemies swung at it.
+	//
+	// Widening the query is the right fix rather than moving bases onto the Pawn
+	// channel: a base is not a pawn, and relabelling it as one to get it hit
+	// would put a stationary structure into every other pawn query in the
+	// project. What may be attacked is decided by IPTKCombatTarget below, not by
+	// a collision channel.
+	FCollisionObjectQueryParams ObjectTypes;
+	ObjectTypes.AddObjectTypesToQuery(ECC_Pawn);
+	ObjectTypes.AddObjectTypesToQuery(ECC_WorldDynamic);
+
 	World->OverlapMultiByObjectType(
-		Overlaps, Centre, FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn),
+		Overlaps, Centre, FQuat::Identity, ObjectTypes,
 		FCollisionShape::MakeSphere(GetAttackHitRadius()), Params);
 
 	for (const FOverlapResult& Result : Overlaps)
@@ -1146,7 +1269,7 @@ void APTKTopDownCharacter::PerformAttackHit()
 
 		if (UPTKHealthComponent* VictimHealth = PTKCombat::GetHealth(Victim))
 		{
-			const float Dealt = VictimHealth->ApplyDamage(AttackDamage, this);
+			const float Dealt = VictimHealth->ApplyDamage(GetEffectiveAttackDamage(), this);
 			if (Dealt > 0.0f)
 			{
 				OnAttackHit(Victim, Dealt);
