@@ -90,6 +90,7 @@ public:
 
 protected:
 	virtual void HandleDeath(AActor* Killer) override;
+	virtual void FireProjectile() override;
 
 	/**
 	 * Picks a target. Currently the player pawn, if it is hostile and alive.

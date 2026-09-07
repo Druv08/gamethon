@@ -38,14 +38,23 @@ int32 APTKEnemySpawner::SpawnWave()
 		return 0;
 	}
 
-	if (!EnemyClass)
+	TArray<TSubclassOf<APTKEnemyCharacter>> Roster;
+	if (EnemyClass)
+	{
+		for (int32 i = 0; i < FMath::Clamp(SpawnCount, 0, 200); ++i) Roster.Add(EnemyClass);
+	}
+	for (const FPTKEnemySpawnEntry& Entry : AdditionalEnemies)
+	{
+		if (!Entry.EnemyClass) continue;
+		for (int32 i = 0; i < FMath::Clamp(Entry.Count, 0, 200); ++i) Roster.Add(Entry.EnemyClass);
+	}
+	ClearWave();
+	if (Roster.IsEmpty())
 	{
 		UE_LOG(LogPTK, Warning,
-			TEXT("%s has no EnemyClass set - nothing to spawn."), *GetName());
+			TEXT("%s has no configured enemies to spawn."), *GetName());
 		return 0;
 	}
-
-	ClearWave();
 
 	// Movement is locked to the XZ play plane, so the ring is laid out in
 	// screen-right / screen-up and never given a Y component.
@@ -54,7 +63,7 @@ int32 APTKEnemySpawner::SpawnWave()
 
 	int32 Placed = 0;
 	int32 Ring = 0;
-	while (Placed < SpawnCount)
+	while (Placed < Roster.Num())
 	{
 		const float Radius = RingRadius + Ring * MinSeparation;
 
@@ -63,7 +72,7 @@ int32 APTKEnemySpawner::SpawnWave()
 		// from the circumference rather than being guessed.
 		const int32 Capacity = FMath::Max(1,
 			FMath::FloorToInt((2.0f * PI * Radius) / FMath::Max(1.0f, MinSeparation)));
-		const int32 OnThisRing = FMath::Min(Capacity, SpawnCount - Placed);
+		const int32 OnThisRing = FMath::Min(Capacity, Roster.Num() - Placed);
 
 		// Offset alternate rings by half a slot so they interleave instead of
 		// lining up into spokes.
@@ -86,14 +95,14 @@ int32 APTKEnemySpawner::SpawnWave()
 			Params.ObjectFlags |= RF_Transient;
 
 			APTKEnemyCharacter* const Enemy = World->SpawnActor<APTKEnemyCharacter>(
-				EnemyClass, Location, FRotator::ZeroRotator, Params);
+				Roster[Placed], Location, FRotator::ZeroRotator, Params);
 
 			if (Enemy)
 			{
 				// Labels exist only in editor builds; naming the spawned actors
 				// is purely so they are readable in the outliner.
 #if WITH_EDITOR
-				Enemy->SetActorLabel(FString::Printf(TEXT("SwarmNode_Spawned_%02d"), Placed + 1));
+				Enemy->SetActorLabel(FString::Printf(TEXT("%s_Spawned_%02d"), *Enemy->GetEnemyId().ToString(), Placed + 1));
 #endif
 				Spawned.Add(Enemy);
 				if (bDrawSpawnPoints)
@@ -121,7 +130,7 @@ int32 APTKEnemySpawner::SpawnWave()
 	}
 
 	UE_LOG(LogPTK, Log, TEXT("%s spawned %d/%d enemies across %d ring(s)"),
-		*GetName(), Spawned.Num(), SpawnCount, Ring);
+		*GetName(), Spawned.Num(), Roster.Num(), Ring);
 	return Spawned.Num();
 }
 

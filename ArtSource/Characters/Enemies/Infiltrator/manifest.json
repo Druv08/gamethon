@@ -1,0 +1,1412 @@
+{
+  "name": "Infiltrator",
+  "canvas": [
+    240,
+    240
+  ],
+  "pivot": [
+    112,
+    200
+  ],
+  "body_height": 116.0,
+  "measured_extent": [
+    87.55537998235475,
+    83.07457459246322,
+    150.08771929824562,
+    6.614035087719299
+  ],
+  "source_sha256": {
+    "0189ac42-1e63-42b7-8715-d649578feaf9.png": "59796e08d3a0b1ec23ad6cf5242c4478f8c64b211078f00b9dbb3772d83496de",
+    "1366cd2b-0b7d-4edd-9122-6d29aa58c6da.png": "4ea8e4f32038587b415716ff71d2194e0aeff81363cdfaf13a4e0faa359074ec",
+    "7c381f7b-11d2-4d88-a5c9-ef346a0b280d.png": "83f7d83b8aa4d66a596c474e01f6ab114f0bf3cc1c321fd2df9374aeab5668ab",
+    "b75f3e47-5090-445a-90df-0a5186c2f275.png": "831f0f1fbd5740be8ee68a31c548a164b84a7ba75d33ad202cd2a711062c3cf4",
+    "fdf25c08-0f75-4037-a3ce-18afcbe4bb91.png": "9a48c9e838d6411a638c88223059179a607982e0c983d7fb5ec09a8277ecc0cd",
+    "infiltrator.png": "8d14b79c818a93a7a48d92fd65c73d3189f15bea26bfdc06e117ff2161070db4"
+  },
+  "frames": [
+    {
+      "stem": "Walk_Down_01",
+      "folder": "Walk/Down",
+      "anchor": [
+        429.76528117359413,
+        245
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 0,
+      "column": 0,
+      "bounds": [
+        52,
+        84,
+        170,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Down_02",
+      "folder": "Walk/Down",
+      "anchor": [
+        428.44676328502413,
+        249
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 0,
+      "column": 1,
+      "bounds": [
+        59,
+        83,
+        173,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Down_03",
+      "folder": "Walk/Down",
+      "anchor": [
+        428.3589106450651,
+        246
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 0,
+      "column": 2,
+      "bounds": [
+        59,
+        84,
+        168,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Down_04",
+      "folder": "Walk/Down",
+      "anchor": [
+        424.38427734375,
+        249
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 0,
+      "column": 3,
+      "bounds": [
+        54,
+        85,
+        171,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Down_05",
+      "folder": "Walk/Down",
+      "anchor": [
+        426.60412775494956,
+        247
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 0,
+      "column": 4,
+      "bounds": [
+        57,
+        84,
+        172,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Down_06",
+      "folder": "Walk/Down",
+      "anchor": [
+        423.22296189097926,
+        249
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 0,
+      "column": 5,
+      "bounds": [
+        58,
+        83,
+        173,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Down_07",
+      "folder": "Walk/Down",
+      "anchor": [
+        414.15596617601,
+        241
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 0,
+      "column": 6,
+      "bounds": [
+        57,
+        86,
+        171,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Down_08",
+      "folder": "Walk/Down",
+      "anchor": [
+        407.9295885299028,
+        249
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 0,
+      "column": 7,
+      "bounds": [
+        57,
+        85,
+        170,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Up_01",
+      "folder": "Walk/Up",
+      "anchor": [
+        405.0598223099704,
+        262
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 1,
+      "column": 0,
+      "bounds": [
+        59,
+        76,
+        170,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Up_02",
+      "folder": "Walk/Up",
+      "anchor": [
+        400.0357786589762,
+        269
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 1,
+      "column": 1,
+      "bounds": [
+        57,
+        73,
+        170,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Up_03",
+      "folder": "Walk/Up",
+      "anchor": [
+        404.4531503296228,
+        251
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 1,
+      "column": 2,
+      "bounds": [
+        59,
+        82,
+        170,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Up_04",
+      "folder": "Walk/Up",
+      "anchor": [
+        389.39372526851326,
+        260
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 1,
+      "column": 3,
+      "bounds": [
+        56,
+        77,
+        173,
+        202
+      ]
+    },
+    {
+      "stem": "Walk_Up_05",
+      "folder": "Walk/Up",
+      "anchor": [
+        403.0122821750997,
+        258
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 1,
+      "column": 4,
+      "bounds": [
+        56,
+        78,
+        167,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Up_06",
+      "folder": "Walk/Up",
+      "anchor": [
+        395.9531278006811,
+        266
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 1,
+      "column": 5,
+      "bounds": [
+        51,
+        75,
+        174,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Up_07",
+      "folder": "Walk/Up",
+      "anchor": [
+        403.3683603880511,
+        266
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 1,
+      "column": 6,
+      "bounds": [
+        58,
+        75,
+        167,
+        202
+      ]
+    },
+    {
+      "stem": "Walk_Up_08",
+      "folder": "Walk/Up",
+      "anchor": [
+        404.19214265280823,
+        269
+      ],
+      "scale": 0.46774193548387094,
+      "source": "b75f3e47-5090-445a-90df-0a5186c2f275",
+      "row": 1,
+      "column": 7,
+      "bounds": [
+        59,
+        73,
+        168,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Left_01",
+      "folder": "Walk/Left",
+      "anchor": [
+        421.1499083953012,
+        246
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 0,
+      "column": 0,
+      "bounds": [
+        53,
+        84,
+        173,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Left_02",
+      "folder": "Walk/Left",
+      "anchor": [
+        423.6823529411765,
+        246
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 0,
+      "column": 1,
+      "bounds": [
+        52,
+        84,
+        172,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Left_03",
+      "folder": "Walk/Left",
+      "anchor": [
+        425.5312129380054,
+        246
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 0,
+      "column": 2,
+      "bounds": [
+        51,
+        84,
+        175,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Left_04",
+      "folder": "Walk/Left",
+      "anchor": [
+        424.3006557024616,
+        247
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 0,
+      "column": 3,
+      "bounds": [
+        52,
+        81,
+        175,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Left_05",
+      "folder": "Walk/Left",
+      "anchor": [
+        424.6222604211431,
+        247
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 0,
+      "column": 4,
+      "bounds": [
+        51,
+        81,
+        174,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Left_06",
+      "folder": "Walk/Left",
+      "anchor": [
+        422.6359969475635,
+        246
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 0,
+      "column": 5,
+      "bounds": [
+        53,
+        84,
+        172,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Left_07",
+      "folder": "Walk/Left",
+      "anchor": [
+        421.28577777777775,
+        246
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 0,
+      "column": 6,
+      "bounds": [
+        53,
+        84,
+        172,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Left_08",
+      "folder": "Walk/Left",
+      "anchor": [
+        416.7325107810254,
+        247
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 0,
+      "column": 7,
+      "bounds": [
+        56,
+        84,
+        169,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Right_01",
+      "folder": "Walk/Right",
+      "anchor": [
+        400.4358945969885,
+        243
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 1,
+      "column": 0,
+      "bounds": [
+        54,
+        83,
+        171,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Right_02",
+      "folder": "Walk/Right",
+      "anchor": [
+        396.0833333333333,
+        242
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 1,
+      "column": 1,
+      "bounds": [
+        54,
+        83,
+        171,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Right_03",
+      "folder": "Walk/Right",
+      "anchor": [
+        391.4725368668519,
+        243
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 1,
+      "column": 2,
+      "bounds": [
+        53,
+        83,
+        173,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Right_04",
+      "folder": "Walk/Right",
+      "anchor": [
+        389.83713980789753,
+        245
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 1,
+      "column": 3,
+      "bounds": [
+        53,
+        83,
+        173,
+        200
+      ]
+    },
+    {
+      "stem": "Walk_Right_05",
+      "folder": "Walk/Right",
+      "anchor": [
+        391.2332896461337,
+        245
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 1,
+      "column": 4,
+      "bounds": [
+        52,
+        83,
+        173,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Right_06",
+      "folder": "Walk/Right",
+      "anchor": [
+        390.37080698746115,
+        242
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 1,
+      "column": 5,
+      "bounds": [
+        52,
+        83,
+        175,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Right_07",
+      "folder": "Walk/Right",
+      "anchor": [
+        397.66881695657185,
+        244
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 1,
+      "column": 6,
+      "bounds": [
+        54,
+        83,
+        172,
+        201
+      ]
+    },
+    {
+      "stem": "Walk_Right_08",
+      "folder": "Walk/Right",
+      "anchor": [
+        398.1714580231359,
+        245
+      ],
+      "scale": 0.4793388429752066,
+      "source": "fdf25c08-0f75-4037-a3ce-18afcbe4bb91",
+      "row": 1,
+      "column": 7,
+      "bounds": [
+        56,
+        83,
+        170,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Down_01",
+      "folder": "Attack/Down",
+      "anchor": [
+        407.3028559976941,
+        261
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 0,
+      "column": 0,
+      "bounds": [
+        58,
+        87,
+        168,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Down_02",
+      "folder": "Attack/Down",
+      "anchor": [
+        407.3028559976941,
+        261
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 0,
+      "column": 1,
+      "bounds": [
+        66,
+        95,
+        153,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Down_03",
+      "folder": "Attack/Down",
+      "anchor": [
+        407.3028559976941,
+        261
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 0,
+      "column": 2,
+      "bounds": [
+        53,
+        109,
+        176,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Down_04",
+      "folder": "Attack/Down",
+      "anchor": [
+        407.3028559976941,
+        261
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 0,
+      "column": 3,
+      "bounds": [
+        38,
+        66,
+        168,
+        205
+      ]
+    },
+    {
+      "stem": "Attack_Down_05",
+      "folder": "Attack/Down",
+      "anchor": [
+        407.3028559976941,
+        261
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 0,
+      "column": 4,
+      "bounds": [
+        27,
+        66,
+        186,
+        199
+      ]
+    },
+    {
+      "stem": "Attack_Down_06",
+      "folder": "Attack/Down",
+      "anchor": [
+        407.3028559976941,
+        261
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 0,
+      "column": 5,
+      "bounds": [
+        44,
+        90,
+        190,
+        206
+      ]
+    },
+    {
+      "stem": "Attack_Down_07",
+      "folder": "Attack/Down",
+      "anchor": [
+        407.3028559976941,
+        261
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 0,
+      "column": 6,
+      "bounds": [
+        57,
+        89,
+        170,
+        205
+      ]
+    },
+    {
+      "stem": "Attack_Down_08",
+      "folder": "Attack/Down",
+      "anchor": [
+        407.3028559976941,
+        261
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 0,
+      "column": 7,
+      "bounds": [
+        56,
+        86,
+        167,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Up_01",
+      "folder": "Attack/Up",
+      "anchor": [
+        406.64154256880295,
+        295
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 1,
+      "column": 0,
+      "bounds": [
+        58,
+        76,
+        169,
+        198
+      ]
+    },
+    {
+      "stem": "Attack_Up_02",
+      "folder": "Attack/Up",
+      "anchor": [
+        406.64154256880295,
+        295
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 1,
+      "column": 1,
+      "bounds": [
+        61,
+        80,
+        165,
+        202
+      ]
+    },
+    {
+      "stem": "Attack_Up_03",
+      "folder": "Attack/Up",
+      "anchor": [
+        406.64154256880295,
+        295
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 1,
+      "column": 2,
+      "bounds": [
+        41,
+        97,
+        171,
+        202
+      ]
+    },
+    {
+      "stem": "Attack_Up_04",
+      "folder": "Attack/Up",
+      "anchor": [
+        406.64154256880295,
+        295
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 1,
+      "column": 3,
+      "bounds": [
+        41,
+        49,
+        163,
+        202
+      ]
+    },
+    {
+      "stem": "Attack_Up_05",
+      "folder": "Attack/Up",
+      "anchor": [
+        406.64154256880295,
+        295
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 1,
+      "column": 4,
+      "bounds": [
+        37,
+        49,
+        185,
+        207
+      ]
+    },
+    {
+      "stem": "Attack_Up_06",
+      "folder": "Attack/Up",
+      "anchor": [
+        406.64154256880295,
+        295
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 1,
+      "column": 5,
+      "bounds": [
+        53,
+        87,
+        194,
+        203
+      ]
+    },
+    {
+      "stem": "Attack_Up_07",
+      "folder": "Attack/Up",
+      "anchor": [
+        406.64154256880295,
+        295
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 1,
+      "column": 6,
+      "bounds": [
+        63,
+        80,
+        177,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Up_08",
+      "folder": "Attack/Up",
+      "anchor": [
+        406.64154256880295,
+        295
+      ],
+      "scale": 0.5087719298245614,
+      "source": "0189ac42-1e63-42b7-8715-d649578feaf9",
+      "row": 1,
+      "column": 7,
+      "bounds": [
+        56,
+        76,
+        167,
+        200
+      ]
+    },
+    {
+      "stem": "Attack_Left_01",
+      "folder": "Attack/Left",
+      "anchor": [
+        412.6950640177266,
+        229
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 0,
+      "column": 0,
+      "bounds": [
+        52,
+        83,
+        181,
+        200
+      ]
+    },
+    {
+      "stem": "Attack_Left_02",
+      "folder": "Attack/Left",
+      "anchor": [
+        412.6950640177266,
+        229
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 0,
+      "column": 1,
+      "bounds": [
+        49,
+        80,
+        166,
+        200
+      ]
+    },
+    {
+      "stem": "Attack_Left_03",
+      "folder": "Attack/Left",
+      "anchor": [
+        412.6950640177266,
+        229
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 0,
+      "column": 2,
+      "bounds": [
+        33,
+        104,
+        160,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Left_04",
+      "folder": "Attack/Left",
+      "anchor": [
+        412.6950640177266,
+        229
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 0,
+      "column": 3,
+      "bounds": [
+        31,
+        86,
+        173,
+        199
+      ]
+    },
+    {
+      "stem": "Attack_Left_05",
+      "folder": "Attack/Left",
+      "anchor": [
+        412.6950640177266,
+        229
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 0,
+      "column": 4,
+      "bounds": [
+        24,
+        85,
+        176,
+        202
+      ]
+    },
+    {
+      "stem": "Attack_Left_06",
+      "folder": "Attack/Left",
+      "anchor": [
+        412.6950640177266,
+        229
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 0,
+      "column": 5,
+      "bounds": [
+        43,
+        91,
+        178,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Left_07",
+      "folder": "Attack/Left",
+      "anchor": [
+        412.6950640177266,
+        229
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 0,
+      "column": 6,
+      "bounds": [
+        46,
+        86,
+        172,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Left_08",
+      "folder": "Attack/Left",
+      "anchor": [
+        412.6950640177266,
+        229
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 0,
+      "column": 7,
+      "bounds": [
+        50,
+        82,
+        180,
+        200
+      ]
+    },
+    {
+      "stem": "Attack_Right_01",
+      "folder": "Attack/Right",
+      "anchor": [
+        407.48483341840546,
+        225
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 1,
+      "column": 0,
+      "bounds": [
+        47,
+        82,
+        175,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Right_02",
+      "folder": "Attack/Right",
+      "anchor": [
+        407.48483341840546,
+        225
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 1,
+      "column": 1,
+      "bounds": [
+        57,
+        82,
+        181,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Right_03",
+      "folder": "Attack/Right",
+      "anchor": [
+        407.48483341840546,
+        225
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 1,
+      "column": 2,
+      "bounds": [
+        43,
+        107,
+        174,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Right_04",
+      "folder": "Attack/Right",
+      "anchor": [
+        407.48483341840546,
+        225
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 1,
+      "column": 3,
+      "bounds": [
+        42,
+        93,
+        182,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Right_05",
+      "folder": "Attack/Right",
+      "anchor": [
+        407.48483341840546,
+        225
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 1,
+      "column": 4,
+      "bounds": [
+        50,
+        82,
+        191,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Right_06",
+      "folder": "Attack/Right",
+      "anchor": [
+        407.48483341840546,
+        225
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 1,
+      "column": 5,
+      "bounds": [
+        54,
+        89,
+        187,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Right_07",
+      "folder": "Attack/Right",
+      "anchor": [
+        407.48483341840546,
+        225
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 1,
+      "column": 6,
+      "bounds": [
+        53,
+        87,
+        174,
+        201
+      ]
+    },
+    {
+      "stem": "Attack_Right_08",
+      "folder": "Attack/Right",
+      "anchor": [
+        407.48483341840546,
+        225
+      ],
+      "scale": 0.5190156599552572,
+      "source": "1366cd2b-0b7d-4edd-9122-6d29aa58c6da",
+      "row": 1,
+      "column": 7,
+      "bounds": [
+        44,
+        82,
+        172,
+        201
+      ]
+    },
+    {
+      "stem": "Death_01",
+      "folder": "Death",
+      "anchor": [
+        668.4531091868186,
+        363
+      ],
+      "scale": 0.3231197771587744,
+      "source": "7c381f7b-11d2-4d88-a5c9-ef346a0b280d",
+      "row": 0,
+      "column": 0,
+      "bounds": [
+        71,
+        82,
+        183,
+        201
+      ]
+    },
+    {
+      "stem": "Death_02",
+      "folder": "Death",
+      "anchor": [
+        668.4531091868186,
+        363
+      ],
+      "scale": 0.3231197771587744,
+      "source": "7c381f7b-11d2-4d88-a5c9-ef346a0b280d",
+      "row": 0,
+      "column": 1,
+      "bounds": [
+        56,
+        88,
+        169,
+        202
+      ]
+    },
+    {
+      "stem": "Death_03",
+      "folder": "Death",
+      "anchor": [
+        668.4531091868186,
+        363
+      ],
+      "scale": 0.3231197771587744,
+      "source": "7c381f7b-11d2-4d88-a5c9-ef346a0b280d",
+      "row": 0,
+      "column": 2,
+      "bounds": [
+        41,
+        100,
+        168,
+        203
+      ]
+    },
+    {
+      "stem": "Death_04",
+      "folder": "Death",
+      "anchor": [
+        668.4531091868186,
+        363
+      ],
+      "scale": 0.3231197771587744,
+      "source": "7c381f7b-11d2-4d88-a5c9-ef346a0b280d",
+      "row": 0,
+      "column": 3,
+      "bounds": [
+        38,
+        109,
+        162,
+        202
+      ]
+    },
+    {
+      "stem": "Death_05",
+      "folder": "Death",
+      "anchor": [
+        638.8985148388423,
+        241
+      ],
+      "scale": 0.3231197771587744,
+      "source": "7c381f7b-11d2-4d88-a5c9-ef346a0b280d",
+      "row": 1,
+      "column": 0,
+      "bounds": [
+        69,
+        122,
+        195,
+        204
+      ]
+    },
+    {
+      "stem": "Death_06",
+      "folder": "Death",
+      "anchor": [
+        638.8985148388423,
+        241
+      ],
+      "scale": 0.3231197771587744,
+      "source": "7c381f7b-11d2-4d88-a5c9-ef346a0b280d",
+      "row": 1,
+      "column": 1,
+      "bounds": [
+        60,
+        134,
+        186,
+        204
+      ]
+    },
+    {
+      "stem": "Death_07",
+      "folder": "Death",
+      "anchor": [
+        638.8985148388423,
+        241
+      ],
+      "scale": 0.3231197771587744,
+      "source": "7c381f7b-11d2-4d88-a5c9-ef346a0b280d",
+      "row": 1,
+      "column": 2,
+      "bounds": [
+        53,
+        122,
+        178,
+        204
+      ]
+    },
+    {
+      "stem": "Death_08",
+      "folder": "Death",
+      "anchor": [
+        638.8985148388423,
+        241
+      ],
+      "scale": 0.3231197771587744,
+      "source": "7c381f7b-11d2-4d88-a5c9-ef346a0b280d",
+      "row": 1,
+      "column": 3,
+      "bounds": [
+        46,
+        130,
+        175,
+        202
+      ]
+    },
+    {
+      "stem": "Idle_Down",
+      "folder": "Idle",
+      "anchor": [
+        215.0355175688509,
+        356
+      ],
+      "scale": 0.3411764705882353,
+      "source": "infiltrator.png",
+      "crop": [
+        80,
+        335,
+        545,
+        710
+      ],
+      "bounds": [
+        57,
+        84,
+        168,
+        200
+      ]
+    },
+    {
+      "stem": "Idle_Up",
+      "folder": "Idle",
+      "anchor": [
+        212.25166325486182,
+        357
+      ],
+      "scale": 0.34017595307917886,
+      "source": "infiltrator.png",
+      "crop": [
+        575,
+        335,
+        1040,
+        710
+      ],
+      "bounds": [
+        66,
+        84,
+        157,
+        202
+      ]
+    },
+    {
+      "stem": "Idle_Left",
+      "folder": "Idle",
+      "anchor": [
+        273.50758001122966,
+        359
+      ],
+      "scale": 0.3352601156069364,
+      "source": "infiltrator.png",
+      "crop": [
+        80,
+        790,
+        545,
+        1170
+      ],
+      "bounds": [
+        47,
+        84,
+        175,
+        200
+      ]
+    },
+    {
+      "stem": "Idle_Right",
+      "folder": "Idle",
+      "anchor": [
+        175.7386660474836,
+        359
+      ],
+      "scale": 0.3372093023255814,
+      "source": "infiltrator.png",
+      "crop": [
+        575,
+        790,
+        1040,
+        1170
+      ],
+      "bounds": [
+        53,
+        84,
+        172,
+        200
+      ]
+    }
+  ]
+}

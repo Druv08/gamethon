@@ -117,7 +117,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Projectile")
 	bool IsSpent() const { return bSpent; }
 
+	/** Optional shot-specific target lock. Unset preserves existing guard shots. */
+	void SetIntendedTarget(AActor* InTarget) { IntendedTarget = InTarget; bTargetRestricted = true; }
+
 protected:
+	TWeakObjectPtr<AActor> IntendedTarget;
+	bool bTargetRestricted = false;
+
 	/** Fired when the arrow damages something. Prototype hook for VFX / audio. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "PTK|Projectile")
 	void OnProjectileHit(AActor* Victim, float DamageDealt);

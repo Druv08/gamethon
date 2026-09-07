@@ -8,6 +8,16 @@
 
 class APTKEnemyCharacter;
 
+USTRUCT(BlueprintType)
+struct FPTKEnemySpawnEntry
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Spawner")
+	TSubclassOf<APTKEnemyCharacter> EnemyClass;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Spawner", meta = (ClampMin = "0", ClampMax = "200"))
+	int32 Count = 5;
+};
+
 /**
  * APTKEnemySpawner
  * ================
@@ -44,6 +54,10 @@ public:
 	void ClearWave();
 
 protected:
+	/** Additional types share the same spaced placement and start gating. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Spawner")
+	TArray<FPTKEnemySpawnEntry> AdditionalEnemies;
+
 	/** What to spawn. Set to BP_SwarmNode. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Spawner")
 	TSubclassOf<APTKEnemyCharacter> EnemyClass;

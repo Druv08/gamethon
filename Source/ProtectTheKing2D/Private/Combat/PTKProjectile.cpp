@@ -178,6 +178,7 @@ void APTKProjectile::Tick(float DeltaSeconds)
 	for (const FHitResult& Hit : Hits)
 	{
 		AActor* const Victim = Hit.GetActor();
+		if (bTargetRestricted && Victim != IntendedTarget.Get()) continue;
 		if (Victim == SourceActor || !PTKCombat::IsEngageable(Victim))
 		{
 			continue;
@@ -228,7 +229,7 @@ int32 APTKProjectile::ApplySplash(const FVector& AtLocation, AActor* DirectVicti
 	// overlapping a tiny sphere: an 18-unit enemy capsule pressed against
 	// another would be caught by any radius at all, so a spell that is supposed
 	// to hit one body has to skip the query entirely.
-	if (SplashRadius <= 0.0f)
+	if (SplashRadius <= 0.0f || bTargetRestricted)
 	{
 		if (!PTKCombat::IsEngageable(DirectVictim))
 		{

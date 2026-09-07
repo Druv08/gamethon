@@ -4,6 +4,7 @@
 
 #include "AIController.h"
 #include "Combat/PTKCombatTarget.h"
+#include "Combat/PTKProjectile.h"
 #include "EngineUtils.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PTKHealthComponent.h"
@@ -220,6 +221,25 @@ void APTKEnemyCharacter::HandleDeath(AActor* Killer)
 	AttackCooldownRemaining = 0.0f;
 
 	Super::HandleDeath(Killer);
+}
+
+void APTKEnemyCharacter::FireProjectile()
+{
+	if (IsDead() || !GetWorld() || !ProjectileClass || !IsValidAttackVictim(Target)) return;
+	// Keep four-direction animation, but aim the flight at the actual target.
+	const FVector Aim = (Target->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.Instigator = this;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	APTKProjectile* Shot = GetWorld()->SpawnActor<APTKProjectile>(ProjectileClass,
+		GetActorLocation(), FRotator::ZeroRotator, Params);
+	if (Shot)
+	{
+		Shot->SetIntendedTarget(Target);
+		Shot->Launch(Aim, FacingDirection, this, Team, AttackDamage,
+			ProjectileSpeed, GetAttackReach(), MuzzleHeightOffset, MovementUpVector);
+	}
 }
 
 void APTKEnemyCharacter::Tick(float DeltaSeconds)
