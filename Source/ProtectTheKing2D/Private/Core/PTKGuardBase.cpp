@@ -2,6 +2,7 @@
 
 #include "Components/CapsuleComponent.h"
 #include "Components/PTKHealthComponent.h"
+#include "Analytics/PTKAnalyticsSubsystem.h"
 #include "Core/PTKBattlefield.h"
 #include "PaperSprite.h"
 #include "PaperSpriteComponent.h"
@@ -124,6 +125,11 @@ void APTKGuardBase::HandleDestroyed(UPTKHealthComponent* Component, AActor* Kill
 	{
 		RuinsSprite->SetSprite(DestroyedSprite);
 		RuinsSprite->SetVisibility(true);
+	}
+
+	if (UPTKAnalyticsSubsystem* Analytics = UPTKAnalyticsSubsystem::Get(GetWorld()))
+	{
+		Analytics->NotifyBaseDestroyed(this);
 	}
 
 	UE_LOG(LogPTK, Warning, TEXT("BASE DESTROYED | %s | enemies will reacquire%s"),

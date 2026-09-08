@@ -1,5 +1,8 @@
 #include "Core/PTKBattlefield.h"
 
+#include "Analytics/PTKAdaptiveDirector.h"
+#include "Analytics/PTKAnalyticsSubsystem.h"
+
 #include "Characters/PTKGuardCharacter.h"
 #include "Characters/PTKKingCharacter.h"
 #include "Core/PTKGuardBase.h"
@@ -660,4 +663,14 @@ APTKGuardBase* APTKBattlefield::FindBaseForGuard(FName GuardId) const
 		}
 	}
 	return nullptr;
+}
+
+UPTKAnalyticsSubsystem* APTKBattlefield::GetAnalytics() const
+{
+	return UPTKAnalyticsSubsystem::Get(GetWorld());
+}
+
+UPTKAdaptiveDirector* APTKBattlefield::GetDirector() const
+{
+	return UPTKAdaptiveDirector::Get(GetWorld());
 }

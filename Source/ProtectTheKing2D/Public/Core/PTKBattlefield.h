@@ -7,6 +7,8 @@
 #include "PTKBattlefield.generated.h"
 
 class APTKGuardBase;
+class UPTKAnalyticsSubsystem;
+class UPTKAdaptiveDirector;
 class APTKGuardCharacter;
 class APTKKingCharacter;
 class APTKSpawnPortal;
@@ -226,6 +228,20 @@ public:
 	/** How many nodes a route has. */
 	UFUNCTION(BlueprintPure, Category = "PTK|Lane")
 	int32 GetRouteLength(FName RouteId) const;
+
+	/**
+	 * The run's analytics recorder.
+	 *
+	 * Exposed here because a world subsystem has no Blueprint or Python
+	 * accessor of its own in this engine build, and the battlefield is already
+	 * the thing everything else asks about the run.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Analytics")
+	UPTKAnalyticsSubsystem* GetAnalytics() const;
+
+	/** The adaptive director. Exposed here for the same reason as GetAnalytics. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Analytics")
+	UPTKAdaptiveDirector* GetDirector() const;
 
 	// ------------------------------------------------------------------
 	// Walkable ground

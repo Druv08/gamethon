@@ -348,6 +348,31 @@ protected:
 	/** Name, bar and numbers floating over every guard base. */
 	void DrawBaseHealth();
 
+	/**
+	 * The between-waves readout: what the AI concluded and what it will do.
+	 *
+	 * Drawn only during an intermission, and every line is a value the
+	 * analytics actually computed. Nothing here is written to sound clever -
+	 * if a number is not known yet, the line is omitted rather than invented.
+	 */
+	void DrawAIAnalysis();
+
+	/** Full adaptive state. Off unless PTK.ToggleAIDebug turns it on. */
+	void DrawAIDebug();
+
+public:
+	/** Flips the adaptive AI debug panel. Driven by PTK.ToggleAIDebug. */
+	void ToggleAIDebug();
+
+protected:
+
+	/** Toggled by the PTK.ToggleAIDebug console command. */
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|Debug")
+	bool bShowAIDebug = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
+	float AnalysisWidth = 268.0f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
 	float BaseBarWidth = 104.0f;
 

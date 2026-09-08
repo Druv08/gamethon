@@ -5,6 +5,8 @@
 #include "Core/PTKBattlefield.h"
 #include "Core/PTKGuardBase.h"
 #include "Core/PTKGameModeBase.h"
+#include "Analytics/PTKAdaptiveDirector.h"
+#include "Analytics/PTKAnalyticsSubsystem.h"
 #include "Core/PTKSpawnPortal.h"
 #include "EngineUtils.h"
 #include "ProtectTheKing2D.h"
@@ -47,6 +49,13 @@ void APTKWaveManager::BeginPlay()
 	Stream.Initialize(ActiveSeed);
 	UE_LOG(LogPTK, Log, TEXT("WAVES | seed %d%s"), ActiveSeed,
 		Carried != 0 ? TEXT(" (replayed)") : TEXT(""));
+
+	if (UPTKAdaptiveDirector* Director = UPTKAdaptiveDirector::Get(GetWorld()))
+	{
+		// Same seed as the wave manager, so a Restart replays the director's
+		// exploration rolls as well as the wave rolls.
+		Director->SeedFrom(ActiveSeed);
+	}
 
 	UE_LOG(LogPTK, Log, TEXT("WAVES | %d waves configured | waiting for start"), Waves.Num());
 }
@@ -169,6 +178,17 @@ void APTKWaveManager::BeginWave(int32 Wave)
 	CurrentWave = Wave;
 	const FPTKWaveDefinition& Definition = Waves[Wave - 1];
 
+	// Ask the director how this wave should attack, BEFORE the corners are
+	// chosen - its answer is what weights that choice. Adapting happens here,
+	// between waves, and nowhere else: once bodies are on the field nothing
+	// re-steers them.
+	FPTKDirectorPlan Plan;
+	if (UPTKAdaptiveDirector* Director = UPTKAdaptiveDirector::Get(GetWorld()))
+	{
+		Plan = Director->BuildPlan(Wave);
+		Director->LogPlan();
+	}
+
 	// Choose which corners this wave uses, at random, without repeats.
 	ActivePortals.Reset();
 	TArray<APTKSpawnPortal*> All;
@@ -189,10 +209,48 @@ void APTKWaveManager::BeginWave(int32 Wave)
 		return;
 	}
 
-	const int32 Wanted = FMath::Clamp(Definition.PortalCount, 1, All.Num());
-	for (int32 i = 0; i < Wanted; ++i)
+	const int32 Wanted = FMath::Clamp(
+		FMath::Max(Definition.PortalCount, Plan.MinimumPortals), 1, All.Num());
+
+	// Corners are drawn weighted by how much pressure the plan puts on the
+	// lanes they feed, so a strategy that wants a particular front is likely -
+	// not guaranteed - to get it. Weighted rather than deterministic keeps
+	// repeated runs from becoming identical.
+	const APTKBattlefield* const PlanField = APTKBattlefield::Get(GetWorld());
+	for (int32 i = 0; i < Wanted && All.Num() > 0; ++i)
 	{
-		const int32 Pick = Stream.RandRange(0, All.Num() - 1);
+		float Total = 0.0f;
+		TArray<float> Weights;
+		Weights.Reserve(All.Num());
+		for (const APTKSpawnPortal* Portal : All)
+		{
+			float Weight = 0.0f;
+			for (const FPTKLanePlan& Lane : Plan.Lanes)
+			{
+				const FPTKLaneRoute* Route = PlanField ? PlanField->FindRoute(Lane.LaneId) : nullptr;
+				if (Route && Portal && Route->PortalId == Portal->GetPortalId())
+				{
+					Weight += FMath::Max(Lane.Pressure, 0.0f);
+				}
+			}
+			// A floor, so a corner the plan ignores can still be drawn and no
+			// part of the map becomes permanently safe.
+			Weight = FMath::Max(Weight, 0.05f);
+			Weights.Add(Weight);
+			Total += Weight;
+		}
+
+		int32 Pick = 0;
+		float Roll = Stream.FRand() * Total;
+		for (int32 j = 0; j < All.Num(); ++j)
+		{
+			Roll -= Weights[j];
+			if (Roll <= 0.0f)
+			{
+				Pick = j;
+				break;
+			}
+		}
 		ActivePortals.Add(All[Pick]);
 		All.RemoveAt(Pick);
 	}
@@ -239,6 +297,11 @@ void APTKWaveManager::BeginWave(int32 Wave)
 	Phase = EPTKWavePhase::Warning;
 	PhaseTimer = WarningDuration;
 	SpawnTimer = 0.0f;
+
+	if (UPTKAnalyticsSubsystem* Analytics = UPTKAnalyticsSubsystem::Get(GetWorld()))
+	{
+		Analytics->NotifyWaveBegan(Wave);
+	}
 
 	UE_LOG(LogPTK, Log, TEXT("WAVE %d/%d INCOMING | %d enemies from %s | HP x%.2f DMG x%.2f"),
 		Wave, Waves.Num(), PendingRoster.Num(), *PortalNames,
@@ -318,7 +381,12 @@ void APTKWaveManager::Tick(float DeltaSeconds)
 		SpawnTimer -= DeltaSeconds;
 		while (SpawnTimer <= 0.0f && PendingRoster.Num() > 0)
 		{
-			SpawnOne(PendingRoster.Pop(EAllowShrinking::No));
+			// The roster still carries the wave's BUDGET - one entry per body,
+			// popped here - but which lane this body walks and what it is are
+			// the director's to decide. The count it was built with is never
+			// changed, so an adapting wave is never a bigger wave.
+			PendingRoster.Pop(EAllowShrinking::No);
+			SpawnOne(nullptr);
 			SpawnTimer += FMath::Max(Definition.SpawnInterval, 0.01f);
 		}
 		if (PendingRoster.Num() == 0)
@@ -340,6 +408,21 @@ void APTKWaveManager::Tick(float DeltaSeconds)
 	case EPTKWavePhase::Fighting:
 		if (GetEnemiesRemaining() == 0)
 		{
+			// Freeze the record before the phase changes, so the snapshot is
+			// of the wave that was just fought rather than of whatever the
+			// next one has already begun doing.
+			if (UPTKAnalyticsSubsystem* Analytics = UPTKAnalyticsSubsystem::Get(GetWorld()))
+			{
+				Analytics->NotifyWaveEnded(CurrentWave);
+
+				// Score the plan that just ran against what it achieved. Done
+				// after the freeze so the reward is read from the finished
+				// snapshot rather than from counters still being written to.
+				if (UPTKAdaptiveDirector* Director = UPTKAdaptiveDirector::Get(GetWorld()))
+				{
+					Director->LearnFromWave(Analytics->GetLastSnapshot());
+				}
+			}
 			if (CurrentWave >= Waves.Num())
 			{
 				Phase = EPTKWavePhase::Complete;
@@ -355,6 +438,15 @@ void APTKWaveManager::Tick(float DeltaSeconds)
 				Phase = EPTKWavePhase::Intermission;
 				PhaseTimer = IntermissionDuration;
 				UE_LOG(LogPTK, Log, TEXT("WAVE %d CLEARED | next in %.0fs"), CurrentWave, PhaseTimer);
+
+				// Decide the next wave NOW rather than when it starts, so the
+				// analysis panel shown during the intermission is reporting the
+				// real decision instead of a prediction of one.
+				if (UPTKAdaptiveDirector* Director = UPTKAdaptiveDirector::Get(GetWorld()))
+				{
+					Director->BuildPlan(CurrentWave + 1);
+					Director->LogWaveBlock(CurrentWave + 1);
+				}
 			}
 		}
 		break;
@@ -374,7 +466,9 @@ void APTKWaveManager::Tick(float DeltaSeconds)
 
 bool APTKWaveManager::SpawnOne(TSubclassOf<APTKEnemyCharacter> EnemyClass)
 {
-	if (!EnemyClass || ActivePortals.Num() == 0)
+	// A null class is not an error here: it means "director's choice", resolved
+	// below once the lane is known.
+	if (ActivePortals.Num() == 0)
 	{
 		return false;
 	}
@@ -383,13 +477,11 @@ bool APTKWaveManager::SpawnOne(TSubclassOf<APTKEnemyCharacter> EnemyClass)
 	// round. Choosing the portal first and the lane second would let the two
 	// disagree and put an enemy on a route starting in a different corner.
 	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
-	FName RouteId = NAME_None;
+	FName RouteId = PickLaneFromPlan();
 	APTKSpawnPortal* Portal = nullptr;
 
-	if (Field && ActiveRoutes.Num() > 0)
+	if (Field && !RouteId.IsNone())
 	{
-		RouteId = ActiveRoutes[RouteCursor % ActiveRoutes.Num()];
-		++RouteCursor;
 		if (const FPTKLaneRoute* Route = Field->FindRoute(RouteId))
 		{
 			for (const TObjectPtr<APTKSpawnPortal>& Candidate : ActivePortals)
@@ -401,6 +493,17 @@ bool APTKWaveManager::SpawnOne(TSubclassOf<APTKEnemyCharacter> EnemyClass)
 				}
 			}
 		}
+	}
+
+	// What walks down it. Chosen after the lane, because the director's
+	// composition bias is per-lane.
+	if (!EnemyClass)
+	{
+		EnemyClass = PickEnemyForLane(RouteId);
+	}
+	if (!EnemyClass)
+	{
+		return false;
 	}
 	if (!Portal)
 	{
@@ -426,6 +529,11 @@ bool APTKWaveManager::SpawnOne(TSubclassOf<APTKEnemyCharacter> EnemyClass)
 	if (!RouteId.IsNone())
 	{
 		Enemy->AssignLaneRoute(RouteId);
+	}
+
+	if (UPTKAnalyticsSubsystem* Analytics = UPTKAnalyticsSubsystem::Get(GetWorld()))
+	{
+		Analytics->NotifyEnemySpawned(Enemy, RouteId);
 	}
 
 	// Scaling is applied to this instance only - never to the Blueprint. See the
@@ -561,4 +669,120 @@ int32 APTKWaveManager::DebugSpawnExtra(int32 Count)
 	UE_LOG(LogPTK, Warning, TEXT("WAVES | stress spawn | %d of %d requested | %d alive"),
 		Spawned, Count, GetEnemiesRemaining());
 	return Spawned;
+}
+
+FName APTKWaveManager::PickLaneFromPlan() const
+{
+	if (ActiveRoutes.Num() == 0)
+	{
+		return NAME_None;
+	}
+
+	const UPTKAdaptiveDirector* Director = UPTKAdaptiveDirector::Get(GetWorld());
+	if (!Director)
+	{
+		return ActiveRoutes[Stream.RandRange(0, ActiveRoutes.Num() - 1)];
+	}
+
+	// Only lanes this wave actually opened are eligible - the plan covers every
+	// lane on the map, but a wave still arrives through the corners it chose.
+	const FPTKDirectorPlan Plan = Director->GetCurrentPlan();
+	float Total = 0.0f;
+	for (const FPTKLanePlan& Lane : Plan.Lanes)
+	{
+		if (ActiveRoutes.Contains(Lane.LaneId))
+		{
+			Total += FMath::Max(Lane.Pressure, 0.0f);
+		}
+	}
+	if (Total <= KINDA_SMALL_NUMBER)
+	{
+		return ActiveRoutes[Stream.RandRange(0, ActiveRoutes.Num() - 1)];
+	}
+
+	float Roll = Stream.FRand() * Total;
+	for (const FPTKLanePlan& Lane : Plan.Lanes)
+	{
+		if (!ActiveRoutes.Contains(Lane.LaneId))
+		{
+			continue;
+		}
+		Roll -= FMath::Max(Lane.Pressure, 0.0f);
+		if (Roll <= 0.0f)
+		{
+			return Lane.LaneId;
+		}
+	}
+	return ActiveRoutes.Last();
+}
+
+TSubclassOf<APTKEnemyCharacter> APTKWaveManager::PickEnemyForLane(FName LaneId) const
+{
+	if (!Waves.IsValidIndex(CurrentWave - 1))
+	{
+		return nullptr;
+	}
+	const FPTKWaveDefinition& Definition = Waves[CurrentWave - 1];
+
+	// The director's bias for this lane, if it has one. Absent means x1.
+	const TMap<FName, float>* Bias = nullptr;
+	if (const UPTKAdaptiveDirector* Director = UPTKAdaptiveDirector::Get(GetWorld()))
+	{
+		const FPTKDirectorPlan Plan = Director->GetCurrentPlan();
+		for (const FPTKLanePlan& Lane : Plan.Lanes)
+		{
+			if (Lane.LaneId == LaneId)
+			{
+				Bias = &Lane.TypeWeights;
+				break;
+			}
+		}
+	}
+
+	// Reverse-map class back to id so the bias table, which is written in terms
+	// of enemy ids, can be applied to the wave's composition entries.
+	auto IdForClass = [this](const TSubclassOf<APTKEnemyCharacter>& Class) -> FName
+	{
+		for (const TPair<FName, TSubclassOf<APTKEnemyCharacter>>& Pair : EnemyTypes)
+		{
+			if (Pair.Value == Class)
+			{
+				return Pair.Key;
+			}
+		}
+		return NAME_None;
+	};
+
+	float Total = 0.0f;
+	TArray<float> Weights;
+	Weights.Reserve(Definition.Composition.Num());
+	for (const FPTKWaveEntry& Entry : Definition.Composition)
+	{
+		float Weight = (Entry.EnemyClass && Entry.Weight > 0)
+			? static_cast<float>(Entry.Weight) : 0.0f;
+		if (Weight > 0.0f && Bias)
+		{
+			if (const float* Multiplier = Bias->Find(IdForClass(Entry.EnemyClass)))
+			{
+				Weight *= FMath::Max(*Multiplier, 0.0f);
+			}
+		}
+		Weights.Add(Weight);
+		Total += Weight;
+	}
+	if (Total <= KINDA_SMALL_NUMBER)
+	{
+		return nullptr;
+	}
+
+	float Roll = Stream.FRand() * Total;
+	for (int32 i = 0; i < Definition.Composition.Num(); ++i)
+	{
+		Roll -= Weights[i];
+		if (Roll <= 0.0f)
+		{
+			return Definition.Composition[i].EnemyClass;
+		}
+	}
+	return Definition.Composition.Last().EnemyClass;
 }

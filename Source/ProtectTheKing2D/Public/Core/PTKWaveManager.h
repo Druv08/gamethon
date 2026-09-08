@@ -209,6 +209,25 @@ protected:
 	/** Spawns one enemy at one of the active portals. */
 	bool SpawnOne(TSubclassOf<APTKEnemyCharacter> EnemyClass);
 
+	/**
+	 * Picks the lane for the next spawn, weighted by the director's plan.
+	 *
+	 * Weighted rather than round-robin so pressure can actually be unequal.
+	 * With a balanced plan every weight is the same and this behaves exactly
+	 * like the old rotation.
+	 */
+	FName PickLaneFromPlan() const;
+
+	/**
+	 * Picks what to send down a lane: the wave's own composition weights,
+	 * multiplied by whatever bias the director asked for on that lane.
+	 *
+	 * The wave definition still decides the SIZE of the wave - this only
+	 * decides the mix, which is the one part of composition the director is
+	 * allowed to touch.
+	 */
+	TSubclassOf<APTKEnemyCharacter> PickEnemyForLane(FName LaneId) const;
+
 	/** Drops references to anything dead, so the remaining count stays honest. */
 	void PruneDead();
 
@@ -288,7 +307,8 @@ private:
 	/** Next slot in ActiveRoutes to deal from. */
 	int32 RouteCursor = 0;
 
-	FRandomStream Stream;
+	/** Mutable: the const lane/type pickers draw from it. */
+	mutable FRandomStream Stream;
 
 	/** Whatever Stream was actually initialised with. Read via GetActiveSeed. */
 	UPROPERTY(VisibleInstanceOnly, Category = "PTK|Wave")

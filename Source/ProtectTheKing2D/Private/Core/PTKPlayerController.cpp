@@ -8,6 +8,7 @@
 #include "InputTriggers.h"
 
 #include "AI/PTKGuardAIController.h"
+#include "Analytics/PTKAnalyticsSubsystem.h"
 #include "Characters/PTKGuardCharacter.h"
 #include "Characters/PTKKingCharacter.h"
 #include "Components/PTKHealthComponent.h"
@@ -207,6 +208,14 @@ void APTKPlayerController::OnPossess(APawn* InPawn)
 	// keys can never be the casualty of a pawn swap - they are the one control
 	// that has to work even when the guard under them does not.
 	AddSwitchMappingContext();
+
+	// Reported from possession rather than from the switch keys, so that every
+	// route into a guard is counted the same way - the number keys, the
+	// hand-off on death, and the console command all end up here.
+	if (UPTKAnalyticsSubsystem* Analytics = UPTKAnalyticsSubsystem::Get(GetWorld()))
+	{
+		Analytics->NotifyPossession(Cast<APTKGuardCharacter>(InPawn));
+	}
 }
 
 void APTKPlayerController::OnUnPossess()

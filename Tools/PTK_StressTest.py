@@ -198,15 +198,25 @@ def tick(delta):
             stage = 4
             started = time.monotonic()
 
-        # The measured window.
+        # The measured window. The load is HELD here rather than spiked once
+        # and left to decay: guards kill things, so a single top-up before the
+        # window measures a field that is already emptying. Refilling each
+        # sample is what makes "100 enemies" mean 100 enemies throughout.
         elif stage == 4:
+            target = TARGETS[target_index]
+            alive_now = living(unreal.PTKEnemyCharacter)
+            if len(alive_now) < target:
+                waves.debug_spawn_extra(target - len(alive_now))
+            globals()['peak_alive'] = max(globals().get('peak_alive', 0), len(alive_now))
+
             sample(delta)
             if elapsed < 14:
                 return
 
-            target = TARGETS[target_index]
             alive = living(unreal.PTKEnemyCharacter)
             row = measure(len(alive))
+            row['peak_alive'] = globals().get('peak_alive', 0)
+            globals()['peak_alive'] = 0
             row['requested'] = target
             levels[str(target)] = row
 
@@ -224,8 +234,9 @@ def tick(delta):
             row['stuck'] = len(stuck_reports)
 
             check('{} enemies: field actually reached load'.format(target),
-                  len(alive) >= target * 0.85,
-                  '{} alive of {} requested'.format(len(alive), target))
+                  row['peak_alive'] >= target * 0.85,
+                  'peaked at {}, ended at {}, of {} requested'.format(
+                      row['peak_alive'], len(alive), target))
 
             # Judged against the light control rather than against an absolute
             # millisecond budget, because this harness renders offscreen at a

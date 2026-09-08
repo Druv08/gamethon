@@ -6,6 +6,7 @@
 #include "Characters/PTKGuardCharacter.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/PTKHealthComponent.h"
+#include "Analytics/PTKAnalyticsSubsystem.h"
 #include "Core/PTKBattlefield.h"
 #include "Core/PTKGameModeBase.h"
 #include "DrawDebugHelpers.h"
@@ -456,6 +457,11 @@ bool APTKKingCharacter::TriggerEmergencyPower()
 	// used.
 	PowerCooldownRemaining = PowerCooldown;
 	BoostedGuard = Chosen;
+
+	if (UPTKAnalyticsSubsystem* Analytics = UPTKAnalyticsSubsystem::Get(GetWorld()))
+	{
+		Analytics->NotifyKingPower(Chosen);
+	}
 	TriggerPowerCast();
 
 	UE_LOG(LogPTK, Warning, TEXT("KING POWER | %s empowered x%.1f for %.0fs (King at %.0f%%)"),

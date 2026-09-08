@@ -8,6 +8,8 @@
 #include "Characters/PTKTopDownCharacter.h"
 #include "Components/PTKHealthComponent.h"
 #include "AI/PTKGuardAIController.h"
+#include "Analytics/PTKAdaptiveDirector.h"
+#include "Analytics/PTKAnalyticsSubsystem.h"
 #include "Core/PTKBattlefield.h"
 #include "Core/PTKGameModeBase.h"
 #include "Core/PTKGuardBase.h"
@@ -763,6 +765,8 @@ void APTKCombatHUD::DrawHUD()
 	DrawMinimap();
 	DrawWorldLabels();
 	DrawWarnings();
+	DrawAIAnalysis();
+	DrawAIDebug();
 	DrawResultBanner();
 
 	// The old banners only fire while the run is still notionally live; once a
@@ -2116,3 +2120,271 @@ void APTKCombatHUD::PTKBaseProbe(const FString& BaseName)
 		*GetNameSafe(Nearest->GetTarget()),
 		Nearest->IsValidAttackVictim(Base) ? 1 : 0);
 }
+
+// ---------------------------------------------------------------------------
+// Adaptive AI readouts
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	/** "NW_Aegis" -> "North-West". Used for the human-readable next-wave line. */
+	FString CompassOf(const APTKBattlefield* Field, FName LaneId)
+	{
+		const FPTKLaneRoute* Route = Field ? Field->FindRoute(LaneId) : nullptr;
+		if (!Route)
+		{
+			return LaneId.ToString();
+		}
+		const FString Portal = Route->PortalId.ToString();
+		if (Portal == TEXT("NorthWest")) return TEXT("North-West");
+		if (Portal == TEXT("NorthEast")) return TEXT("North-East");
+		if (Portal == TEXT("SouthWest")) return TEXT("South-West");
+		if (Portal == TEXT("SouthEast")) return TEXT("South-East");
+		return Portal;
+	}
+}
+
+void APTKCombatHUD::DrawAIAnalysis()
+{
+	APTKWaveManager* const Waves = GetWaveManager();
+	const APTKBattlefield* const Field = GetBattlefield();
+	if (!Waves || !Field)
+	{
+		return;
+	}
+
+	// Between waves only. It disappears by itself when the next wave starts,
+	// because the phase it is gated on has moved on.
+	if (Waves->GetPhase() != EPTKWavePhase::Intermission)
+	{
+		return;
+	}
+
+	const UPTKAdaptiveDirector* Director = Field->GetDirector();
+	if (!Director || !Director->HasPreviousStrategy())
+	{
+		return;
+	}
+
+	float FocusShare = 0.0f;
+	float WeakVuln = 0.0f;
+	float TopDominance = 0.0f;
+	const FName Focus = Director->GetFocusGuard(FocusShare);
+	const FName Weak = Director->GetWeakestLane(WeakVuln);
+	const FName Dominant = Director->GetDominantGuard(TopDominance);
+	const FPTKDirectorPlan Plan = Director->GetCurrentPlan();
+
+	const float X = Canvas->SizeX - AnalysisWidth - 16.0f;
+	// Below the minimap, which owns the top-right corner. Derived from the
+	// minimap's own width fraction and the map's aspect so the two cannot
+	// overlap at a different resolution.
+	const APTKBattlefield* const Map = Field;
+	const float MinimapW = Canvas->SizeX * MinimapWidthFraction;
+	const float Aspect = (Map && Map->GetMapWidth() > 0.0f)
+		? Map->GetMapHeight() / Map->GetMapWidth() : 0.56f;
+	const float Y = MinimapMargin * 2.0f + MinimapW * Aspect + 12.0f;
+	float Row = Y + 10.0f;
+
+	const int32 Lines = 16;
+	DrawPanel(X, Y, AnalysisWidth, 26.0f + Lines * 13.0f, 0.82f);
+
+	auto Line = [this, X, &Row](const FString& Text, const FLinearColor& Colour, float Indent)
+	{
+		DrawText(Text, Colour, X + 10.0f + Indent, Row, GEngine->GetSmallFont());
+		Row += 13.0f;
+	};
+
+	Line(TEXT("AI ANALYSIS"), PTKHUDColours::KingGold, 0.0f);
+	Row += 4.0f;
+
+	if (!Focus.IsNone())
+	{
+		Line(TEXT("Player Focus:"), PTKHUDColours::Dim, 0.0f);
+		Line(FString::Printf(TEXT("%s - %.0f%%"), *Focus.ToString(), FocusShare * 100.0f),
+			PTKHUDColours::Text, 8.0f);
+	}
+	if (!Weak.IsNone())
+	{
+		Line(TEXT("Weakest Defence:"), PTKHUDColours::Dim, 0.0f);
+		const FPTKLaneRoute* Route = Field->FindRoute(Weak);
+		Line(FString::Printf(TEXT("%s Lane - %.0f%%"),
+			Route ? *Route->BaseId.ToString() : *Weak.ToString(), WeakVuln * 100.0f),
+			PTKHUDColours::Warning, 8.0f);
+	}
+	if (!Dominant.IsNone())
+	{
+		Line(TEXT("Strongest Defender:"), PTKHUDColours::Dim, 0.0f);
+		Line(FString::Printf(TEXT("%s - %.0f%%"), *Dominant.ToString(), TopDominance * 100.0f),
+			PTKHUDColours::Text, 8.0f);
+	}
+
+	Line(TEXT("Previous Strategy:"), PTKHUDColours::Dim, 0.0f);
+	Line(Director->GetStrategyName(Director->GetPreviousStrategy()), PTKHUDColours::Text, 8.0f);
+
+	Line(TEXT("Enemy Success:"), PTKHUDColours::Dim, 0.0f);
+	Line(FString::Printf(TEXT("%.0f%%"), Director->GetLastReward() * 100.0f),
+		PTKHUDColours::Text, 8.0f);
+
+	Row += 4.0f;
+	Line(TEXT("ADAPTATION:"), PTKHUDColours::KingGold, 0.0f);
+	Line(Director->GetStrategyName(Plan.Strategy), PTKHUDColours::Boosted, 8.0f);
+
+	// "Next Wave" is derived from the plan that has already been decided, so
+	// what is promised here is exactly what arrives.
+	Row += 4.0f;
+	Line(TEXT("Next Wave:"), PTKHUDColours::Dim, 0.0f);
+
+	const FPTKLanePlan* Heaviest = nullptr;
+	for (const FPTKLanePlan& Lane : Plan.Lanes)
+	{
+		if (!Heaviest || Lane.Pressure > Heaviest->Pressure)
+		{
+			Heaviest = &Lane;
+		}
+	}
+	if (Heaviest)
+	{
+		Line(FString::Printf(TEXT("More %s pressure (%.0f%%)"),
+			*CompassOf(Field, Heaviest->LaneId), Heaviest->Pressure * 100.0f),
+			PTKHUDColours::Text, 8.0f);
+	}
+
+	// Name a composition change only where one was actually made.
+	for (const FPTKLanePlan& Lane : Plan.Lanes)
+	{
+		if (Lane.TypeWeights.Num() == 0)
+		{
+			continue;
+		}
+		const FPTKLaneRoute* Route = Field->FindRoute(Lane.LaneId);
+		bool bNamed = false;
+		for (const TPair<FName, float>& Pair : Lane.TypeWeights)
+		{
+			if (Pair.Value > 1.0f)
+			{
+				Line(FString::Printf(TEXT("More %ss vs %s"),
+					*Pair.Key.ToString(), Route ? *Route->BaseId.ToString() : TEXT("that lane")),
+					PTKHUDColours::Text, 8.0f);
+				bNamed = true;
+				break;
+			}
+		}
+		if (bNamed)
+		{
+			break;
+		}
+	}
+}
+
+void APTKCombatHUD::DrawAIDebug()
+{
+	if (!bShowAIDebug)
+	{
+		return;
+	}
+	const APTKBattlefield* const Field = GetBattlefield();
+	const UPTKAdaptiveDirector* Director = Field ? Field->GetDirector() : nullptr;
+	const UPTKAnalyticsSubsystem* Analytics = Field ? Field->GetAnalytics() : nullptr;
+	if (!Director || !Analytics)
+	{
+		return;
+	}
+
+	const FPTKDirectorPlan Plan = Director->GetCurrentPlan();
+	const FPTKWaveSnapshot Live = Analytics->IsTrackingWave()
+		? Analytics->GetLiveSnapshot() : Analytics->GetLastSnapshot();
+
+	const float X = 16.0f;
+	const float Y = Canvas->SizeY * 0.32f;
+	float Row = Y + 10.0f;
+	const int32 Lines = 10 + Live.Guards.Num() + Live.Lanes.Num()
+		+ static_cast<int32>(EPTKStrategy::Count) + Plan.Reasoning.Num();
+	DrawPanel(X, Y, 350.0f, 26.0f + Lines * 12.0f, 0.86f);
+
+	auto Line = [this, X, &Row](const FString& Text, const FLinearColor& Colour)
+	{
+		DrawText(Text, Colour, X + 8.0f, Row, GEngine->GetSmallFont());
+		Row += 12.0f;
+	};
+
+	Line(TEXT("AI DEBUG  [PTK.ToggleAIDebug]"), PTKHUDColours::KingGold);
+	Line(FString::Printf(TEXT("strategy: %s%s  reward %.3f"),
+		*Director->GetStrategyName(Plan.Strategy),
+		Plan.bExploratory ? TEXT(" [explore]") : TEXT(""),
+		Director->GetLastReward()), PTKHUDColours::Boosted);
+
+	for (const FString& Why : Plan.Reasoning)
+	{
+		Line(FString::Printf(TEXT("  why: %s"), *Why), PTKHUDColours::Dim);
+	}
+
+	Line(FString::Printf(TEXT("switching: %s  %.1f/min  focus %s"),
+		Live.Switching.Tempo == EPTKSwitchTempo::High ? TEXT("HIGH")
+			: Live.Switching.Tempo == EPTKSwitchTempo::Medium ? TEXT("MED") : TEXT("LOW"),
+		Live.Switching.SwitchesPerMinute,
+		Live.Switching.bSingleGuardFocus ? *Live.Switching.FocusGuardId.ToString() : TEXT("none")),
+		PTKHUDColours::Text);
+
+	Line(TEXT("guards  ctrl%  dominance"), PTKHUDColours::Dim);
+	for (const FPTKGuardWaveStats& Guard : Live.Guards)
+	{
+		Line(FString::Printf(TEXT("  %-9s %3.0f%%  %.2f"),
+			*Guard.GuardId.ToString(), Guard.PlayerControlFraction * 100.0f, Guard.Dominance),
+			PTKHUDColours::Text);
+	}
+
+	Line(TEXT("lanes  vuln  pressure"), PTKHUDColours::Dim);
+	for (const FPTKLaneWaveStats& Lane : Live.Lanes)
+	{
+		float Pressure = 0.0f;
+		FString Bias;
+		for (const FPTKLanePlan& Planned : Plan.Lanes)
+		{
+			if (Planned.LaneId == Lane.LaneId)
+			{
+				Pressure = Planned.Pressure;
+				for (const TPair<FName, float>& Pair : Planned.TypeWeights)
+				{
+					Bias += FString::Printf(TEXT(" %s x%.1f"),
+						*Pair.Key.ToString().Left(4), Pair.Value);
+				}
+			}
+		}
+		Line(FString::Printf(TEXT("  %-12s %.2f  %.2f%s"),
+			*Lane.LaneId.ToString(), Lane.Vulnerability, Pressure, *Bias),
+			PTKHUDColours::Text);
+	}
+
+	Line(TEXT("learned values"), PTKHUDColours::Dim);
+	for (int32 i = 0; i < static_cast<int32>(EPTKStrategy::Count); ++i)
+	{
+		const EPTKStrategy Strategy = static_cast<EPTKStrategy>(i);
+		Line(FString::Printf(TEXT("  %-24s %.3f  (%d)"),
+			*Director->GetStrategyName(Strategy),
+			Director->GetStrategyValue(Strategy), Director->GetStrategyUses(Strategy)),
+			Strategy == Plan.Strategy ? PTKHUDColours::Boosted : PTKHUDColours::Text);
+	}
+}
+
+void APTKCombatHUD::ToggleAIDebug()
+{
+	bShowAIDebug = !bShowAIDebug;
+	UE_LOG(LogPTK, Warning, TEXT("AI DEBUG | %s"), bShowAIDebug ? TEXT("on") : TEXT("off"));
+}
+
+// The exact command name the spec asks for. A dot is not legal in a UFUNCTION
+// name, so this is registered with the console directly rather than as an exec.
+static FAutoConsoleCommandWithWorld GPTKToggleAIDebug(
+	TEXT("PTK.ToggleAIDebug"),
+	TEXT("Shows or hides the adaptive AI debug panel."),
+	FConsoleCommandWithWorldDelegate::CreateStatic([](UWorld* World)
+	{
+		if (!World)
+		{
+			return;
+		}
+		for (TActorIterator<APTKCombatHUD> It(World); It; ++It)
+		{
+			It->ToggleAIDebug();
+		}
+	}));

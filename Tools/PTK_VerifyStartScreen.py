@@ -141,7 +141,11 @@ def tick(delta):
             stage = 5
             started = time.monotonic()
         elif stage == 5:
-            if elapsed < 0.05:
+            # Polled, not timed. This harness renders offscreen and ticks at
+            # roughly 3 Hz, so a fixed 0.05 s window is frequently LESS than a
+            # single game frame and the injected key has not been processed
+            # yet - the check was racing the frame rate, not the feature.
+            if not pawn.is_attacking() and elapsed < 4.0:
                 return
             check('Player attack after start', pawn.is_attacking())
             release(attack_action)
@@ -149,9 +153,10 @@ def tick(delta):
             stage = 6
             started = time.monotonic()
         elif stage == 6:
-            if elapsed < 0.3:
+            slot2 = pc.get_guard_in_slot(2)
+            if pc.get_controlled_pawn() != slot2 and elapsed < 4.0:
                 return
-            check('GUARD SWITCHING AFTER ENTER', pc.get_controlled_pawn() == pc.get_guard_in_slot(2))
+            check('GUARD SWITCHING AFTER ENTER', pc.get_controlled_pawn() == slot2)
             release(switch_action)
             inject(start_action)
             stage = 7
