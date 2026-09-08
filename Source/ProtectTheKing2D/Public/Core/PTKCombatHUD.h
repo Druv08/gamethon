@@ -341,9 +341,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
 	float EnemyBarHeight = 7.0f;
 
-	/** World units above the enemy's origin to float its bar. */
+	/** Fixed screen-space gap above the standing sprite's head. */
 	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
-	float EnemyBarWorldOffset = 110.0f;
+	float EnemyBarScreenGap = 6.0f;
+
+	/** Name, bar and numbers floating over every guard base. */
+	void DrawBaseHealth();
+
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
+	float BaseBarWidth = 104.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
+	float BaseBarHeight = 8.0f;
+
+	/** World units above the base origin to float its readout. */
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
+	float BaseBarWorldRise = 210.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "PTK|HUD")
 	float KingBarWidth = 320.0f;

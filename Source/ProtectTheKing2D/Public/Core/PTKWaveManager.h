@@ -161,6 +161,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Wave")
 	TArray<FName> GetActiveRoutes() const { return ActiveRoutes; }
 
+	/**
+	 * The seed this run is actually using.
+	 *
+	 * Every random choice a run makes - which corners open, which lanes the
+	 * horde is dealt onto, what each wave is made of - comes from this one
+	 * number, so replaying it reproduces the run and changing it produces a
+	 * different one. That is the whole difference between Restart and New Game.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Wave")
+	int32 GetActiveSeed() const { return ActiveSeed; }
+
+	/**
+	 * Test aid: spawns extra enemies onto the lanes already in play.
+	 *
+	 * For load testing only, and deliberately separate from the wave
+	 * definitions - pushing the field to a hundred bodies has to be possible
+	 * WITHOUT editing what a normal wave contains, or the thing measured is no
+	 * longer the thing shipped. Never called by the game itself.
+	 *
+	 * Returns how many actually spawned.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Wave|Debug")
+	int32 DebugSpawnExtra(int32 Count);
+
 	/** Everything this manager has spawned and not yet buried. C++ only. */
 	const TArray<TObjectPtr<APTKEnemyCharacter>>& GetLiveEnemies() const { return Live; }
 
@@ -265,4 +289,8 @@ private:
 	int32 RouteCursor = 0;
 
 	FRandomStream Stream;
+
+	/** Whatever Stream was actually initialised with. Read via GetActiveSeed. */
+	UPROPERTY(VisibleInstanceOnly, Category = "PTK|Wave")
+	int32 ActiveSeed = 0;
 };

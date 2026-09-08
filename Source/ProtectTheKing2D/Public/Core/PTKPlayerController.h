@@ -169,8 +169,38 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "PTK|Input")
 	int32 SwitchMappingPriority = 1;
 
+	/**
+	 * Q: asks the King to spend his power.
+	 *
+	 * Public so the end-game screen and tests can reach the same path the key
+	 * uses. Refused, with a log line, when the King cannot cast.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|King|Power")
+	bool ActivateKingPower();
+
 private:
 	void Input_StartGame();
+	void Input_KingPower();
+	void Input_Restart();
+	void Input_NewGame();
+
+	/**
+	 * True only while the end-of-match banner is up.
+	 *
+	 * R and N are bound all the time - Enhanced Input has no cheap way to add
+	 * and remove a context on a match-over event - so the guard against
+	 * throwing away a live run is here, at the point of use.
+	 */
+	bool IsEndScreenActive() const;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> KingPowerAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> RestartAction;
+
+	UPROPERTY()
+	TObjectPtr<UInputAction> NewGameAction;
 	UPROPERTY()
 	TObjectPtr<UInputAction> StartAction;
 	UPROPERTY()

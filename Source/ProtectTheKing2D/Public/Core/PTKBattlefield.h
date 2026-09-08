@@ -227,6 +227,40 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Lane")
 	int32 GetRouteLength(FName RouteId) const;
 
+	// ------------------------------------------------------------------
+	// Walkable ground
+	// ------------------------------------------------------------------
+
+	/**
+	 * True where a guard may stand: on a road, on a platform, or on the core.
+	 *
+	 * Derived from the lane graph rather than from authored blocking volumes.
+	 * The graph was traced onto the painted roads in the first place, so it
+	 * already describes exactly the ground the artwork shows as walkable - and
+	 * a corridor test is both cheaper and far more forgiving than the few
+	 * hundred box volumes it would take to enclose every tree and rock, which
+	 * would leave guards wedged in the gaps between them.
+	 *
+	 * Forest, rock, water, structures and everything outside the map read as
+	 * blocked because they are simply not near any road or platform.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Terrain")
+	bool IsWalkable(const FVector& World) const;
+
+	/**
+	 * Nearest walkable point to somewhere blocked. Recovery aid.
+	 *
+	 * Used when something ends up off the road anyway - spawned there, shoved
+	 * there, or teleported by a test - so it can always get back rather than
+	 * being stranded.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PTK|Terrain")
+	FVector FindNearestWalkable(const FVector& World) const;
+
+	/** Half-width of the walkable corridor along a road. */
+	UFUNCTION(BlueprintPure, Category = "PTK|Terrain")
+	float GetRoadHalfWidth() const { return RoadHalfWidth; }
+
 	/**
 	 * Shortest distance from a point to the route's polyline.
 	 *
@@ -315,6 +349,26 @@ protected:
 	/** Portal-to-core lanes. Left empty in the editor, filled by BuildDefaultRoutes. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "PTK|Lane")
 	TArray<FPTKLaneRoute> Routes;
+
+	/**
+	 * Half-width of walkable road, in world units.
+	 *
+	 * The painted roads run about 50 px wide, which is 150 uu at this map's
+	 * scale, so 75 would be the literal edge of the artwork. This is set wider
+	 * on purpose: a guard is a body with width, and holding it to the exact
+	 * painted edge makes the road feel like a tightrope. The extra margin sits
+	 * on the roadside verge rather than in the trees.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Terrain", meta = (ClampMin = "10.0"))
+	float RoadHalfWidth = 120.0f;
+
+	/** Walkable radius around a guard base platform. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Terrain", meta = (ClampMin = "10.0"))
+	float PlatformRadius = 310.0f;
+
+	/** Walkable radius around the King's core, which is a larger structure. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|Terrain", meta = (ClampMin = "10.0"))
+	float CoreRadius = 400.0f;
 
 private:
 	TMap<FName, int32> NodeIndex;

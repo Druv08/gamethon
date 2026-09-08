@@ -213,6 +213,114 @@ void APTKBattlefield::BuildDefaultRoutes()
 		{ TEXT("S_BR"), TEXT("J_BR"), TEXT("B_SENTINEL"), TEXT("J_KBR"), TEXT("KING") });
 }
 
+// ---------------------------------------------------------------------------
+// Walkable ground
+//
+// Everything here works on the XZ play plane and ignores Y. Y is the depth
+// axis: characters are shifted along it to sort in front of and behind each
+// other, so a guard standing squarely on a road can still be 80 units off the
+// plane. Measuring in 3D would read that sorting offset as being off the road.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	FVector ClosestOnSegmentXZ(const FVector& P, const FVector& A, const FVector& B)
+	{
+		const FVector2D P2(P.X, P.Z);
+		const FVector2D A2(A.X, A.Z);
+		const FVector2D B2(B.X, B.Z);
+		const FVector2D AB = B2 - A2;
+		const float LenSq = AB.SizeSquared();
+		if (LenSq <= KINDA_SMALL_NUMBER)
+		{
+			return FVector(A.X, P.Y, A.Z);
+		}
+		const float T = FMath::Clamp(FVector2D::DotProduct(P2 - A2, AB) / LenSq, 0.0f, 1.0f);
+		const FVector2D On = A2 + AB * T;
+		return FVector(On.X, P.Y, On.Y);
+	}
+
+	float DistanceXZ(const FVector& A, const FVector& B)
+	{
+		return FVector2D(A.X - B.X, A.Z - B.Z).Size();
+	}
+
+	float DistanceToSegmentXZ(const FVector& P, const FVector& A, const FVector& B)
+	{
+		return DistanceXZ(P, ClosestOnSegmentXZ(P, A, B));
+	}
+}
+
+bool APTKBattlefield::IsWalkable(const FVector& World) const
+{
+	// Platforms first: they are the widest walkable areas and the places a
+	// guard is most often standing, so testing them first usually answers the
+	// question without touching the road loop at all.
+	for (const FPTKLaneNode& Node : LaneNodes)
+	{
+		const FString Id = Node.Id.ToString();
+		const bool bCore = Id == TEXT("KING");
+		const bool bPlatform = bCore || Id.StartsWith(TEXT("B_"));
+		if (!bPlatform)
+		{
+			continue;
+		}
+		const float Radius = bCore ? CoreRadius : PlatformRadius;
+		const FVector Where = NormalisedToWorld(Node.Normalised);
+		if (DistanceXZ(World, Where) <= Radius)
+		{
+			return true;
+		}
+	}
+
+	// Then the roads. Every edge is walked once; Links are undirected, so an
+	// edge listed from either end covers both.
+	for (const FPTKLaneNode& Node : LaneNodes)
+	{
+		const FVector A = NormalisedToWorld(Node.Normalised);
+		for (const FName& LinkId : Node.Links)
+		{
+			const FVector B = GetNodeLocation(LinkId);
+			if (DistanceToSegmentXZ(World, A, B) <= RoadHalfWidth)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+FVector APTKBattlefield::FindNearestWalkable(const FVector& World) const
+{
+	if (IsWalkable(World))
+	{
+		return World;
+	}
+
+	// Closest point on any road centre-line. Platforms sit on the graph too, so
+	// this also recovers something stranded beside one.
+	FVector Best = MapCentre;
+	float BestSq = TNumericLimits<float>::Max();
+
+	for (const FPTKLaneNode& Node : LaneNodes)
+	{
+		const FVector A = NormalisedToWorld(Node.Normalised);
+		for (const FName& LinkId : Node.Links)
+		{
+			const FVector B = GetNodeLocation(LinkId);
+			const FVector OnSeg = ClosestOnSegmentXZ(World, A, B);
+			const float Dist = DistanceXZ(World, OnSeg);
+			if (Dist < BestSq)
+			{
+				BestSq = Dist;
+				Best = OnSeg;
+			}
+		}
+	}
+	Best.Y = World.Y;
+	return Best;
+}
+
 const FPTKLaneRoute* APTKBattlefield::FindRoute(FName RouteId) const
 {
 	return Routes.FindByPredicate([RouteId](const FPTKLaneRoute& R) { return R.Id == RouteId; });

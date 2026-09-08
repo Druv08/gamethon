@@ -126,6 +126,8 @@ void APTKKingCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	PowerCooldownRemaining = FMath::Max(0.0f, PowerCooldownRemaining - DeltaSeconds);
+
 	// The King is stationary, full stop. Nothing in this class ever moves him,
 	// but a stray physics impulse or a Blueprint nudge would, so the anchor is
 	// re-asserted rather than trusted. This is the last line of defence behind
@@ -363,10 +365,13 @@ void APTKKingCharacter::HandleHealthChanged(UPTKHealthComponent* /*Component*/,
 	// than per tick, because the threshold can only ever be crossed by taking a
 	// hit - polling for it would ask the same question sixty times a second and
 	// get the same answer.
-	if (HealthComponent && !bPowerSpent
+	if (HealthComponent
 		&& HealthComponent->GetHealthFraction() <= PowerHealthThreshold
 		&& NewHealth > 0.0f)
 	{
+		// CanActivatePower inside this is what keeps the automatic cast from
+		// firing on every hit once the King is below the threshold - it refuses
+		// while the power is cooling down or a boost is already running.
 		TriggerEmergencyPower();
 	}
 
@@ -395,9 +400,25 @@ APTKGuardCharacter* APTKKingCharacter::GetBoostedGuard() const
 		? BoostedGuard : nullptr;
 }
 
+bool APTKKingCharacter::CanActivatePower() const
+{
+	return !IsDead()
+		&& PowerCooldownRemaining <= 0.0f
+		&& GetBoostedGuard() == nullptr;
+}
+
+float APTKKingCharacter::GetPowerActiveRemaining() const
+{
+	const APTKGuardCharacter* Boosted = GetBoostedGuard();
+	return Boosted ? Boosted->GetDamageBoostRemaining() : 0.0f;
+}
+
 bool APTKKingCharacter::TriggerEmergencyPower()
 {
-	if (bPowerSpent || IsDead())
+	// THE single activation path. Q and the automatic emergency trigger both
+	// arrive here, so there is one set of rules about when the power may fire
+	// rather than two that can disagree.
+	if (!CanActivatePower())
 	{
 		return false;
 	}
@@ -430,9 +451,10 @@ bool APTKKingCharacter::TriggerEmergencyPower()
 		return false;
 	}
 
-	// Latch only once a guard actually took the boost, so a cast that found
-	// nobody alive is not silently counted as the power having been used.
-	bPowerSpent = true;
+	// Start the cooldown only once a guard actually took the boost, so a cast
+	// that found nobody alive is not silently counted as the power having been
+	// used.
+	PowerCooldownRemaining = PowerCooldown;
 	BoostedGuard = Chosen;
 	TriggerPowerCast();
 

@@ -37,7 +37,16 @@ void APTKWaveManager::BeginPlay()
 	{
 		BuildDefaultWaves();
 	}
-	Stream.Initialize(RandomSeed != 0 ? RandomSeed : FMath::Rand());
+	// A seed handed over by Restart wins; then an authored one; then a fresh
+	// random one. Restart is the only thing that ever supplies one, and it
+	// supplies the seed the previous run used - which is what makes Restart a
+	// replay rather than just another random run.
+	const int32 Carried = APTKGameModeBase::ConsumePendingWaveSeed();
+	ActiveSeed = Carried != 0 ? Carried
+		: (RandomSeed != 0 ? RandomSeed : FMath::Rand());
+	Stream.Initialize(ActiveSeed);
+	UE_LOG(LogPTK, Log, TEXT("WAVES | seed %d%s"), ActiveSeed,
+		Carried != 0 ? TEXT(" (replayed)") : TEXT(""));
 
 	UE_LOG(LogPTK, Log, TEXT("WAVES | %d waves configured | waiting for start"), Waves.Num());
 }
@@ -499,4 +508,57 @@ void APTKWaveManager::DebugSkipToWave(int32 Wave)
 	Live.Reset();
 	PendingRoster.Reset();
 	BeginWave(Wave);
+}
+
+int32 APTKWaveManager::DebugSpawnExtra(int32 Count)
+{
+	if (Count <= 0 || EnemyTypes.Num() == 0)
+	{
+		return 0;
+	}
+
+	TArray<TSubclassOf<APTKEnemyCharacter>> Types;
+	for (const TPair<FName, TSubclassOf<APTKEnemyCharacter>>& Pair : EnemyTypes)
+	{
+		if (Pair.Value)
+		{
+			Types.Add(Pair.Value);
+		}
+	}
+	if (Types.Num() == 0)
+	{
+		return 0;
+	}
+
+	// Reuse the live wave's portals and lanes so the extra bodies behave
+	// exactly like ordinary ones - same corners, same routes, same dealing.
+	// If nothing is in flight, open every portal and every lane first.
+	if (ActivePortals.Num() == 0)
+	{
+		for (TActorIterator<APTKSpawnPortal> It(GetWorld()); It; ++It)
+		{
+			ActivePortals.Add(*It);
+		}
+		ActiveRoutes.Reset();
+		if (const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+		{
+			for (const FPTKLaneRoute& Route : Field->GetRoutes())
+			{
+				ActiveRoutes.Add(Route.Id);
+			}
+		}
+	}
+
+	int32 Spawned = 0;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		if (SpawnOne(Types[Stream.RandRange(0, Types.Num() - 1)]))
+		{
+			++Spawned;
+		}
+	}
+
+	UE_LOG(LogPTK, Warning, TEXT("WAVES | stress spawn | %d of %d requested | %d alive"),
+		Spawned, Count, GetEnemiesRemaining());
+	return Spawned;
 }

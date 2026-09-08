@@ -5,6 +5,7 @@
 
 #include "Characters/PTKEnemyCharacter.h"
 #include "Characters/PTKGuardCharacter.h"
+#include "Characters/PTKKingCharacter.h"
 #include "Combat/PTKCombatTarget.h"
 #include "Components/PTKHealthComponent.h"
 #include "Core/PTKBattlefield.h"
@@ -122,9 +123,26 @@ void APTKGuardAIController::Tick(float DeltaSeconds)
 	DefendCooldownRemaining = FMath::Max(0.0f, DefendCooldownRemaining - DeltaSeconds);
 	TargetRefreshTimer -= DeltaSeconds;
 
+	APTKKingCharacter* King = nullptr;
+	AActor* KingThreat = FindKingThreat(King);
+	if (KingThreat)
+	{
+		// Losing the King ends the run: every available AI guard responds, even
+		// outside its home leash or when ordinary assistance already has helpers.
+		AssistTarget = King;
+		Target = KingThreat;
+	}
+	else if (Cast<APTKKingCharacter>(AssistTarget))
+	{
+		AssistTarget = nullptr;
+		Target = nullptr;
+		TargetRefreshTimer = 0.0f;
+	}
+
 	// Re-acquire when the current target is gone, has been dragged out of the
 	// defended area, or the refresh interval has elapsed.
-	if (!IsTargetStillValid(Guard, Target) || TargetRefreshTimer <= 0.0f)
+	if (!KingThreat && (!IsTargetStillValid(Guard, Target)
+		|| (TargetRefreshTimer <= 0.0f && !Guard->IsAttacking())))
 	{
 		TargetRefreshTimer = TargetRefreshInterval;
 		AActor* const Found = FindTarget(Guard);
@@ -246,6 +264,42 @@ void APTKGuardAIController::Tick(float DeltaSeconds)
 }
 
 // ---------------------------------------------------------------------------
+AActor* APTKGuardAIController::FindKingThreat(APTKKingCharacter*& OutKing) const
+{
+	OutKing = nullptr;
+	if (!GetWorld()) return nullptr;
+	if (const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld()))
+	{
+		OutKing = Field->GetKing();
+	}
+	else
+	{
+		for (TActorIterator<APTKKingCharacter> It(GetWorld()); It; ++It)
+		{
+			if (!It->IsDead()) { OutKing = *It; break; }
+		}
+	}
+	if (!IsValid(OutKing) || OutKing->IsDead()) return nullptr;
+
+	AActor* Best = nullptr;
+	float BestDistanceSq = TNumericLimits<float>::Max();
+	for (TActorIterator<APTKEnemyCharacter> It(GetWorld()); It; ++It)
+	{
+		if (!PTKCombat::IsHostileTarget(GetPawn(), *It)) continue;
+		const float DistanceSq = FVector::DistSquared(
+			OutKing->GetActorLocation(), It->GetActorLocation());
+		if (It->GetTarget() != OutKing && DistanceSq > FMath::Square(KingDefenceRadius)) continue;
+		// Keep an existing threat through its attack instead of switching every frame.
+		if (*It == Target) return *It;
+		if (DistanceSq < BestDistanceSq)
+		{
+			Best = *It;
+			BestDistanceSq = DistanceSq;
+		}
+	}
+	return Best;
+}
+
 bool APTKGuardAIController::IsTargetStillValid(const APTKGuardCharacter* Guard,
 	const AActor* Candidate) const
 {

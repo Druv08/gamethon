@@ -2,6 +2,9 @@
 
 #include "Characters/PTKGuardCharacter.h"
 
+#include "AI/PTKGuardAIController.h"
+#include "Combat/PTKCombatTarget.h"
+
 #include "Components/PTKHealthComponent.h"
 #include "Core/PTKBattlefield.h"
 
@@ -76,6 +79,103 @@ void APTKGuardCharacter::EndPlay(const EEndPlayReason::Type Reason)
 		Field->UnregisterGuard(this);
 	}
 	Super::EndPlay(Reason);
+}
+
+void APTKGuardCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	ConstrainToWalkableGround();
+}
+
+void APTKGuardCharacter::ConstrainToWalkableGround()
+{
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
+	if (!Field || IsDead())
+	{
+		return;
+	}
+
+	const FVector Now = GetActorLocation();
+
+	if (Field->IsWalkable(Now))
+	{
+		LastWalkablePosition = Now;
+		bHasWalkableAnchor = true;
+		return;
+	}
+
+	// No anchor yet means the guard has been off-road since it existed - placed
+	// or spawned somewhere blocked. Put it on the nearest road rather than
+	// leaving it stuck where it cannot legally move.
+	if (!bHasWalkableAnchor)
+	{
+		SetActorLocation(Field->FindNearestWalkable(Now));
+		LastWalkablePosition = GetActorLocation();
+		bHasWalkableAnchor = true;
+		return;
+	}
+
+	// Slide: keep whichever single axis of the attempted move stays legal.
+	const FVector SlideX(Now.X, Now.Y, LastWalkablePosition.Z);
+	const FVector SlideZ(LastWalkablePosition.X, Now.Y, Now.Z);
+
+	if (Field->IsWalkable(SlideX))
+	{
+		SetActorLocation(SlideX);
+	}
+	else if (Field->IsWalkable(SlideZ))
+	{
+		SetActorLocation(SlideZ);
+	}
+	else
+	{
+		SetActorLocation(FVector(LastWalkablePosition.X, Now.Y, LastWalkablePosition.Z));
+	}
+	LastWalkablePosition = GetActorLocation();
+}
+
+bool APTKGuardCharacter::GetProjectileAim(FVector& OutAim) const
+{
+	const APTKGuardAIController* AI = Cast<APTKGuardAIController>(GetController());
+	if (!AI) return Super::GetProjectileAim(OutAim);
+
+	const AActor* Target = AI->GetTarget();
+	if (!PTKCombat::IsHostileTarget(this, Target)) return false;
+
+	FVector Offset = Target->GetActorLocation() - GetActorLocation();
+	Offset.Y = 0.0f;
+	if (Offset.IsNearlyZero() || Offset.Size() > GetAttackReach()) return false;
+
+	// Aim at release, after the wind-up. Lead steady movement so an enemy
+	// crossing the lane does not step out of the flight path before arrival.
+	FVector Velocity = Target->GetVelocity();
+	Velocity.Y = 0.0f;
+	const double A = Velocity.SizeSquared() - FMath::Square(ProjectileSpeed);
+	const double B = 2.0 * FVector::DotProduct(Offset, Velocity);
+	const double C = Offset.SizeSquared();
+	double FlightTime = -1.0;
+	if (FMath::Abs(A) < KINDA_SMALL_NUMBER)
+	{
+		if (B < -KINDA_SMALL_NUMBER) FlightTime = -C / B;
+	}
+	else
+	{
+		const double Discriminant = B * B - 4.0 * A * C;
+		if (Discriminant >= 0.0)
+		{
+			const double Root = FMath::Sqrt(Discriminant);
+			const double T1 = (-B - Root) / (2.0 * A);
+			const double T2 = (-B + Root) / (2.0 * A);
+			FlightTime = T1 > 0.0 ? T1 : T2;
+			if (T2 > 0.0 && T2 < FlightTime) FlightTime = T2;
+		}
+	}
+	if (FlightTime > 0.0 && FlightTime * ProjectileSpeed <= GetAttackReach())
+	{
+		Offset += Velocity * FlightTime;
+	}
+	OutAim = Offset.GetSafeNormal();
+	return true;
 }
 
 void APTKGuardCharacter::CaptureHomePosition()

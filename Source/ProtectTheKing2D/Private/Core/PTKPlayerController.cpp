@@ -9,7 +9,9 @@
 
 #include "AI/PTKGuardAIController.h"
 #include "Characters/PTKGuardCharacter.h"
+#include "Characters/PTKKingCharacter.h"
 #include "Components/PTKHealthComponent.h"
+#include "Core/PTKBattlefield.h"
 #include "Core/PTKTypes.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -113,6 +115,29 @@ void APTKPlayerController::SetupInputComponent()
 	StartMappingContext = NewObject<UInputMappingContext>(this);
 	StartMappingContext->MapKey(StartAction, EKeys::Enter);
 	EnhancedInput->BindAction(StartAction, ETriggerEvent::Triggered, this, &APTKPlayerController::Input_StartGame);
+
+	// Q rides in the same runtime-built context as Enter. It maps a key nothing
+	// else uses, so it cannot collide with WASD, the number keys, attack or
+	// defend - all of which live on the pawn's own context.
+	KingPowerAction = NewObject<UInputAction>(this);
+	KingPowerAction->ValueType = EInputActionValueType::Boolean;
+	KingPowerAction->Triggers.Add(NewObject<UInputTriggerPressed>(KingPowerAction));
+	StartMappingContext->MapKey(KingPowerAction, EKeys::Q);
+	EnhancedInput->BindAction(KingPowerAction, ETriggerEvent::Triggered, this,
+		&APTKPlayerController::Input_KingPower);
+
+	auto BindKey = [this, EnhancedInput](TObjectPtr<UInputAction>& Action, const FKey& Key,
+		void (APTKPlayerController::*Handler)())
+	{
+		Action = NewObject<UInputAction>(this);
+		Action->ValueType = EInputActionValueType::Boolean;
+		Action->Triggers.Add(NewObject<UInputTriggerPressed>(Action));
+		StartMappingContext->MapKey(Action, Key);
+		EnhancedInput->BindAction(Action, ETriggerEvent::Triggered, this, Handler);
+	};
+
+	BindKey(RestartAction, EKeys::R, &APTKPlayerController::Input_Restart);
+	BindKey(NewGameAction, EKeys::N, &APTKPlayerController::Input_NewGame);
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
 	{
 		Subsystem->AddMappingContext(StartMappingContext, 2);
@@ -518,5 +543,72 @@ void APTKPlayerController::HideStartScreen()
 	{
 		StartScreen->RemoveFromParent();
 		StartScreen = nullptr;
+	}
+}
+
+void APTKPlayerController::Input_KingPower()
+{
+	if (!APTKGameModeBase::IsGameplayActive(GetWorld()))
+	{
+		return;
+	}
+	ActivateKingPower();
+}
+
+bool APTKPlayerController::ActivateKingPower()
+{
+	const APTKBattlefield* Field = APTKBattlefield::Get(GetWorld());
+	APTKKingCharacter* King = Field ? Field->GetKing() : nullptr;
+	if (!King)
+	{
+		return false;
+	}
+
+	// Straight to the shared activation - no separate manual path, so a key
+	// press is subject to exactly the rules the automatic cast is.
+	if (King->TriggerEmergencyPower())
+	{
+		return true;
+	}
+
+	UE_LOG(LogPTK, Log, TEXT("KING POWER | refused | %s"),
+		King->IsDead() ? TEXT("King is dead")
+		: King->GetPowerCooldownRemaining() > 0.0f
+			? *FString::Printf(TEXT("cooling down, %.0fs left"), King->GetPowerCooldownRemaining())
+		: King->GetBoostedGuard() != nullptr ? TEXT("a boost is already running")
+		: TEXT("no living guard to empower"));
+	return false;
+}
+
+bool APTKPlayerController::IsEndScreenActive() const
+{
+	const APTKGameModeBase* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<APTKGameModeBase>() : nullptr;
+	return Mode && Mode->IsMatchOver();
+}
+
+void APTKPlayerController::Input_Restart()
+{
+	// Ignored outright during play. R is a perfectly ordinary key to hit by
+	// accident mid-fight, and throwing away a run in progress is not something
+	// to do on a keystroke with no confirmation.
+	if (!IsEndScreenActive())
+	{
+		return;
+	}
+	if (APTKGameModeBase* Mode = GetWorld()->GetAuthGameMode<APTKGameModeBase>())
+	{
+		Mode->RestartRun();
+	}
+}
+
+void APTKPlayerController::Input_NewGame()
+{
+	if (!IsEndScreenActive())
+	{
+		return;
+	}
+	if (APTKGameModeBase* Mode = GetWorld()->GetAuthGameMode<APTKGameModeBase>())
+	{
+		Mode->NewGameRun();
 	}
 }

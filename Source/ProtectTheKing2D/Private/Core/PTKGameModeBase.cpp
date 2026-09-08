@@ -9,6 +9,7 @@
 #include "Core/PTKCombatHUD.h"
 #include "Core/PTKPlayerController.h"
 #include "GameFramework/Pawn.h"
+#include "Kismet/GameplayStatics.h"
 #include "ProtectTheKing2D.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -112,4 +113,65 @@ void APTKGameModeBase::EndRun(EPTKMatchResult Result)
 	UE_LOG(LogPTK, Warning, TEXT("MATCH OVER | %s"),
 		Result == EPTKMatchResult::Victory ? TEXT("VICTORY - the King survived")
 		: TEXT("DEFEAT - the King has fallen"));
+}
+
+// ---------------------------------------------------------------------------
+// Ending a run and starting another
+// ---------------------------------------------------------------------------
+
+namespace
+{
+	/**
+	 * Seed handed from a Restart to the run it starts. Zero means "randomise".
+	 *
+	 * File-static because it has to outlive the level reload that carries it:
+	 * every actor and object in the world, this game mode included, is
+	 * destroyed and rebuilt in between.
+	 */
+	int32 GPendingWaveSeed = 0;
+}
+
+int32 APTKGameModeBase::ConsumePendingWaveSeed()
+{
+	const int32 Seed = GPendingWaveSeed;
+	GPendingWaveSeed = 0;
+	return Seed;
+}
+
+void APTKGameModeBase::RestartRun()
+{
+	// Carry this run's seed over so the next one deals the same corners, lanes
+	// and wave composition. Zero if there is no wave manager to ask, which
+	// simply degrades to a fresh run.
+	GPendingWaveSeed = 0;
+	for (TActorIterator<APTKWaveManager> It(GetWorld()); It; ++It)
+	{
+		GPendingWaveSeed = It->GetActiveSeed();
+		break;
+	}
+
+	UE_LOG(LogPTK, Warning, TEXT("FLOW | RESTART | replaying seed %d"), GPendingWaveSeed);
+	ReloadLevel();
+}
+
+void APTKGameModeBase::NewGameRun()
+{
+	GPendingWaveSeed = 0;
+	UE_LOG(LogPTK, Warning, TEXT("FLOW | NEW GAME | fresh randomisation"));
+	ReloadLevel();
+}
+
+void APTKGameModeBase::ReloadLevel()
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// The reloaded level comes up in WaitingToStart, exactly as a cold launch
+	// does, so the player meets the start screen again rather than walking into
+	// a fight already in progress.
+	const FName Current(*UGameplayStatics::GetCurrentLevelName(World, true));
+	UGameplayStatics::OpenLevel(World, Current);
 }

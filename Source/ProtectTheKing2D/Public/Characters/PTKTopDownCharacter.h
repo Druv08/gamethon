@@ -93,6 +93,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PTK|Components")
 	UPaperFlipbookComponent* GetSprite() const { return Sprite; }
 
+	/** Stable head anchor from standing art, unaffected by weapon/attack animation bounds. */
+	UFUNCTION(BlueprintPure, Category = "PTK|HUD")
+	FVector GetHealthBarAnchor() const;
+
 	UFUNCTION(BlueprintPure, Category = "PTK|Components")
 	UCameraComponent* GetTopDownCamera() const { return TopDownCamera; }
 
@@ -341,6 +345,9 @@ protected:
 	 * character's threat distance is still the single AttackRangeTiles number.
 	 */
 	virtual void FireProjectile();
+
+	/** Resolve flight independently of four-direction artwork; false cancels release. */
+	virtual bool GetProjectileAim(FVector& OutAim) const;
 
 	/** Stops the character, disables collision and enters the Dead state. */
 	UFUNCTION(BlueprintCallable, Category = "PTK|Health")

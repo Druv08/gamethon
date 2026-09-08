@@ -55,6 +55,42 @@ public:
 	static bool IsGameplayActive(const UWorld* World);
 
 	// ------------------------------------------------------------------
+	// Ending a run and starting another
+	// ------------------------------------------------------------------
+
+	/**
+	 * Replays the current run: same map, same wave seed.
+	 *
+	 * Both this and NewGame reload the level rather than unwinding the world by
+	 * hand. Resetting in place would mean finding and undoing every piece of
+	 * state a run accumulates - enemy actors, projectiles in flight, base
+	 * damage, ruins, boosts, cooldowns, wave progress, minimap warnings, who is
+	 * possessing whom - and any one of them missed leaves a subtly poisoned
+	 * second run. A reload cannot miss any of it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Flow")
+	void RestartRun();
+
+	/** A fresh run: same map, newly randomised corners, lanes and composition. */
+	UFUNCTION(BlueprintCallable, Category = "PTK|Flow")
+	void NewGameRun();
+
+	/**
+	 * Takes the seed left for the next level load, clearing it.
+	 *
+	 * A static because it has to survive the level reload that carries it -
+	 * every UObject in the world is destroyed in between, so there is nowhere
+	 * else for it to live.
+	 */
+	static int32 ConsumePendingWaveSeed();
+
+protected:
+	/** Opens the current level again. The whole of both resets. */
+	void ReloadLevel();
+
+public:
+
+	// ------------------------------------------------------------------
 	// Ending the run
 	// ------------------------------------------------------------------
 

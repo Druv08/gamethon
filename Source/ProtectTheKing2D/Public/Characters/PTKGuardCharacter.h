@@ -59,6 +59,29 @@ public:
 	void SetHomePosition(const FVector& NewHome) { HomePosition = NewHome; }
 
 protected:
+	virtual void Tick(float DeltaSeconds) override;
+
+	virtual bool GetProjectileAim(FVector& OutAim) const override;
+
+	/**
+	 * Keeps the guard on walkable ground, sliding along the edge.
+	 *
+	 * Applied AFTER movement rather than by blocking it, because the walkable
+	 * area is a road network with no physical geometry behind it. Trying each
+	 * axis separately is what turns a wall into something you slide along
+	 * instead of something you stick to: walking north-east into a road's
+	 * southern verge keeps the north and drops the east.
+	 *
+	 * Enemies are deliberately untouched. They follow authored lanes that are
+	 * already on the roads, and adding a second constraint on top could only
+	 * fight with the first.
+	 */
+	void ConstrainToWalkableGround();
+
+	/** Last position known to be on walkable ground. */
+	FVector LastWalkablePosition = FVector::ZeroVector;
+	bool bHasWalkableAnchor = false;
+
 	/** Records where this guard stands as its post, unless one was authored. */
 	void CaptureHomePosition();
 

@@ -111,7 +111,7 @@ void APTKCombatHUD::DrawEnemyBar(APTKEnemyCharacter* Enemy)
 	}
 
 	// Project from world space so the bar tracks the creature as it crawls.
-	const FVector World = Enemy->GetActorLocation() + FVector(0.0f, 0.0f, EnemyBarWorldOffset);
+	const FVector World = Enemy->GetHealthBarAnchor();
 	const FVector Screen = Project(World);
 
 	// Behind the camera projects to a negative depth; drawing it would put a
@@ -122,7 +122,11 @@ void APTKCombatHUD::DrawEnemyBar(APTKEnemyCharacter* Enemy)
 	}
 
 	const float X = Screen.X - EnemyBarWidth * 0.5f;
-	const float Y = Canvas->SizeY - Screen.Y;
+	// Project already returns top-left canvas coordinates. Flipping Y again
+	// mirrors the bar across the screen instead of following the enemy.
+	const float Y = Screen.Y - EnemyBarScreenGap - EnemyBarHeight;
+	if (X + EnemyBarWidth < 0.0f || X > Canvas->SizeX || Y + EnemyBarHeight < 0.0f
+		|| Y > Canvas->SizeY) return;
 
 	DrawBar(X, Y, EnemyBarWidth, EnemyBarHeight,
 		Health->GetHealthFraction(), PTKHUDColours::EnemyFill);
@@ -754,6 +758,7 @@ void APTKCombatHUD::DrawHUD()
 	}
 
 	DrawGuardRoster();
+	DrawBaseHealth();
 	DrawWavePanel();
 	DrawMinimap();
 	DrawWorldLabels();
@@ -911,6 +916,29 @@ void APTKCombatHUD::DrawGuardRoster()
 				Health->GetCurrentHealth(), Health->GetMaxHealth()),
 				PTKHUDColours::Dim, X + 94.0f, KingY + 12.0f, GEngine->GetSmallFont());
 		}
+
+		// One line telling the player whether Q is worth pressing.
+		FString PowerText;
+		FLinearColor PowerColour = PTKHUDColours::Dim;
+		if (King->IsDead())
+		{
+			PowerText = TEXT("KING POWER: ---");
+		}
+		else if (const float Active = King->GetPowerActiveRemaining(); Active > 0.0f)
+		{
+			PowerText = FString::Printf(TEXT("KING POWER: ACTIVE %.0fs"), Active);
+			PowerColour = PTKHUDColours::Boosted;
+		}
+		else if (const float Cooling = King->GetPowerCooldownRemaining(); Cooling > 0.0f)
+		{
+			PowerText = FString::Printf(TEXT("KING POWER: %.0fs"), Cooling);
+		}
+		else
+		{
+			PowerText = TEXT("KING POWER: READY  [Q]");
+			PowerColour = PTKHUDColours::KingGold;
+		}
+		DrawText(PowerText, PowerColour, X, KingY + 24.0f, GEngine->GetSmallFont());
 	}
 }
 
@@ -1362,6 +1390,68 @@ void APTKCombatHUD::DrawWarnings()
 // Result banner
 // ---------------------------------------------------------------------------
 
+void APTKCombatHUD::DrawBaseHealth()
+{
+	const APTKBattlefield* Field = GetBattlefield();
+	if (!Field)
+	{
+		return;
+	}
+
+	for (const TObjectPtr<APTKGuardBase>& Base : Field->GetBases())
+	{
+		if (!Base)
+		{
+			continue;
+		}
+
+		const FVector Above = Base->GetActorLocation() + FVector(0.0f, 0.0f, BaseBarWorldRise);
+		const FVector Screen = Project(Above);
+
+		// Behind the camera, or off the edge of it. Bases are fixed points on a
+		// map far larger than the view, so most of them are off screen most of
+		// the time and skipping them early is the bulk of the cost saved.
+		if (Screen.Z <= 0.0f
+			|| Screen.X < -BaseBarWidth || Screen.X > Canvas->SizeX + BaseBarWidth
+			|| Screen.Y < -40.0f || Screen.Y > Canvas->SizeY + 40.0f)
+		{
+			continue;
+		}
+
+		const FString Name = Base->GetGuardId().ToString().ToUpper() + TEXT(" BASE");
+
+		if (Base->IsDestroyed())
+		{
+			DrawCentredText(Name, Screen.X, Screen.Y - 14.0f, PTKHUDColours::Dead);
+			DrawCentredText(TEXT("DESTROYED"), Screen.X, Screen.Y, PTKHUDColours::PlayerLow);
+			continue;
+		}
+
+		const UPTKHealthComponent* Health = Base->GetHealthComponent();
+		if (!Health)
+		{
+			continue;
+		}
+
+		// Green while healthy, amber under half, red under a quarter - so a base
+		// in trouble is legible from the colour alone, without reading numbers
+		// off five of them at once.
+		const float Fraction = Health->GetHealthFraction();
+		const FLinearColor Fill =
+			Fraction <= 0.25f ? PTKHUDColours::PlayerLow
+			: Fraction <= 0.5f ? PTKHUDColours::Warning
+			: PTKHUDColours::PlayerFill;
+
+		DrawCentredText(Name, Screen.X, Screen.Y - 14.0f, PTKHUDColours::Text);
+		DrawBar(Screen.X - BaseBarWidth * 0.5f, Screen.Y, BaseBarWidth, BaseBarHeight,
+			Fraction, Fill);
+		DrawCentredText(
+			FString::Printf(TEXT("%.0f / %.0f"),
+				Health->GetCurrentHealth(), Health->GetMaxHealth()),
+			Screen.X, Screen.Y + BaseBarHeight + 3.0f, PTKHUDColours::Text, 0.85f);
+	}
+}
+
 void APTKCombatHUD::DrawResultBanner()
 {
 	const APTKGameModeBase* Mode = GetWorld() ? GetWorld()->GetAuthGameMode<APTKGameModeBase>() : nullptr;
@@ -1380,6 +1470,25 @@ void APTKCombatHUD::DrawResultBanner()
 		CentreX, CentreY, bWon ? PTKHUDColours::Victory : PTKHUDColours::PlayerLow, 2.4f);
 	DrawCentredText(bWon ? TEXT("THE KING SURVIVED") : TEXT("GAME OVER"),
 		CentreX, CentreY + 40.0f, PTKHUDColours::Text, 1.4f);
+
+	// The two ways out. Drawn as buttons, and R / N do the same thing - both
+	// only exist while this banner is up, which is what stops a stray R during
+	// a fight from throwing away the run.
+	const float ButtonY = CentreY + 96.0f;
+	const float ButtonW = 190.0f;
+	const float ButtonH = 38.0f;
+	const float Gap = 24.0f;
+
+	auto Button = [this, ButtonY, ButtonW, ButtonH](float X, const TCHAR* Label, const TCHAR* Key)
+	{
+		DrawRect(FLinearColor(0.06f, 0.07f, 0.10f, 0.92f), X, ButtonY, ButtonW, ButtonH);
+		DrawRect(PTKHUDColours::KingGold, X, ButtonY, ButtonW, 2.0f);
+		DrawCentredText(Label, X + ButtonW * 0.5f, ButtonY + 9.0f, PTKHUDColours::Text, 1.2f);
+		DrawCentredText(Key, X + ButtonW * 0.5f, ButtonY + 24.0f, PTKHUDColours::Dim, 0.9f);
+	};
+
+	Button(CentreX - ButtonW - Gap * 0.5f, TEXT("RESTART"), TEXT("[R]"));
+	Button(CentreX + Gap * 0.5f, TEXT("NEW GAME"), TEXT("[N]"));
 }
 
 // ---------------------------------------------------------------------------

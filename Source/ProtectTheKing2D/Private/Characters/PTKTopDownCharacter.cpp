@@ -1085,6 +1085,31 @@ void APTKTopDownCharacter::ExecuteAttackImpact()
 	PerformAttackHit();
 }
 
+FVector APTKTopDownCharacter::GetHealthBarAnchor() const
+{
+	float Height = 0.0f;
+	for (UPaperFlipbook* Idle : { IdleFlipbooks.Down.Get(), IdleFlipbooks.Up.Get(),
+		IdleFlipbooks.Left.Get(), IdleFlipbooks.Right.Get() })
+	{
+		if (Idle)
+		{
+			const FBoxSphereBounds Bounds = Idle->GetRenderBounds();
+			Height = FMath::Max(Height, static_cast<float>(Bounds.Origin.Z + Bounds.BoxExtent.Z));
+		}
+	}
+	if (Sprite && Height > 0.0f)
+	{
+		return Sprite->GetComponentTransform().TransformPosition(FVector(0.0f, 0.0f, Height));
+	}
+	return GetActorLocation() + FVector(0.0f, 0.0f, 110.0f);
+}
+
+bool APTKTopDownCharacter::GetProjectileAim(FVector& OutAim) const
+{
+	OutAim = GetFacingWorldDirection();
+	return !OutAim.IsNearlyZero();
+}
+
 void APTKTopDownCharacter::FireProjectile()
 {
 	UWorld* const World = GetWorld();
@@ -1093,9 +1118,8 @@ void APTKTopDownCharacter::FireProjectile()
 		return;
 	}
 
-	// The same direction the melee sphere would have used - one shared source
-	// of truth, so a shot can never disagree with the facing on screen.
-	const FVector Aim = GetFacingWorldDirection();
+	FVector Aim;
+	if (!GetProjectileAim(Aim)) return;
 
 	// On the character's OWN row, with no vertical offset - exactly where
 	// GetAttackHitCentre() puts the melee sphere. Every gameplay footprint in

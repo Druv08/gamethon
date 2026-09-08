@@ -8,6 +8,7 @@
 #include "PTKGuardAIController.generated.h"
 
 class APTKGuardCharacter;
+class APTKKingCharacter;
 
 /**
  * APTKGuardAIController
@@ -103,6 +104,9 @@ public:
 	AActor* GetAssistTarget() const { return AssistTarget; }
 
 protected:
+	/** A single enemy threatening the King takes priority over ordinary post limits. */
+	AActor* FindKingThreat(APTKKingCharacter*& OutKing) const;
+
 	/** Nearest living hostile that is inside this guard's defended area. */
 	AActor* FindTarget(const APTKGuardCharacter* Guard) const;
 
@@ -163,6 +167,9 @@ protected:
 	/** How far this guard will travel from its post to help. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "PTK|Guard|Assist", meta = (ClampMin = "0.0"))
 	float AssistRadius = 1600.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "PTK|Guard|Assist", meta = (ClampMin = "0.0"))
+	float KingDefenceRadius = 500.0f;
 
 	/**
 	 * How many hostiles must be on an ally or base before it counts as needing

@@ -380,8 +380,16 @@ def tick(delta):
             if elapsed < 0.5:
                 return
             boosted = [g for g in guards if g.is_damage_boosted()]
-            check('King power fires below 35% health', king.is_power_spent(),
-                  'King at {:.0f}%'.format(king.get_health_component().get_health_fraction() * 100))
+            # The power became a cooldown ability when Q was added, so "was it
+            # spent" is now "is it on cooldown with a guard carrying the boost".
+            check('King power fires below 35% health',
+                  king.get_power_cooldown_remaining() > 0.0
+                  and king.get_boosted_guard() is not None,
+                  'King at {:.0f}%, cooldown {:.0f}s, boosted {}'.format(
+                      king.get_health_component().get_health_fraction() * 100,
+                      king.get_power_cooldown_remaining(),
+                      king.get_boosted_guard().get_guard_id()
+                      if king.get_boosted_guard() else 'nobody'))
             check('Exactly one guard is empowered', len(boosted) == 1,
                   [g.get_guard_id() for g in boosted])
             if boosted:

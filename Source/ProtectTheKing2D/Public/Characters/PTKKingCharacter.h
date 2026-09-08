@@ -118,8 +118,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PTK|King|Power")
 	bool TriggerEmergencyPower();
 
+	/**
+	 * True when the power could be cast right now.
+	 *
+	 * False while dead, while it is cooling down, and while a boost is already
+	 * running - a second cast cannot stack on the first.
+	 */
 	UFUNCTION(BlueprintPure, Category = "PTK|King|Power")
-	bool IsPowerSpent() const { return bPowerSpent; }
+	bool CanActivatePower() const;
+
+	/** Seconds until the power is ready again. Zero when it already is. */
+	UFUNCTION(BlueprintPure, Category = "PTK|King|Power")
+	float GetPowerCooldownRemaining() const { return PowerCooldownRemaining; }
+
+	/** Seconds left of the boost currently running, or zero. */
+	UFUNCTION(BlueprintPure, Category = "PTK|King|Power")
+	float GetPowerActiveRemaining() const;
 
 	/** The guard currently carrying the King's boost, or nullptr. */
 	UFUNCTION(BlueprintPure, Category = "PTK|King|Power")
@@ -241,9 +255,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Power", meta = (ClampMin = "0.1"))
 	float PowerBoostDuration = 10.0f;
 
-	/** Latches on first use, so the power is once per run. */
+	/**
+	 * Seconds before the power may be cast again.
+	 *
+	 * This replaced a once-per-run latch when the power became something the
+	 * player triggers with Q. A latch is fine for an ability the game spends on
+	 * your behalf, but as a key on the keyboard it has to be re-castable or the
+	 * key is dead for the rest of the run after one press.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PTK|King|Power", meta = (ClampMin = "0.0"))
+	float PowerCooldown = 30.0f;
+
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PTK|King|Power")
-	bool bPowerSpent = false;
+	float PowerCooldownRemaining = 0.0f;
 
 	UPROPERTY()
 	TObjectPtr<APTKGuardCharacter> BoostedGuard;
